@@ -4364,9 +4364,25 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
                 return;
             }
 
+            // 另一个目标正在生成：先中止它，避免两个任务共用同一个 AbortController
+            if (_aiAbortController) {
+                const prevTarget = _aiCurrentTarget;
+                const prevController = _aiAbortController;
+                _aiAbortController = null;
+                _aiCurrentTarget = '';
+                try { prevController.abort(); } catch (e) { /* 已结束则忽略 */ }
+                if (prevTarget && prevTarget !== target) {
+                    const prevStatus = document.getElementById('aiStatus' + capitalizeFirst(prevTarget));
+                    const prevBtn = document.getElementById(prevTarget === 'content' ? 'btnAiGenerateContent' : 'btnAiGenerateNotes');
+                    if (prevStatus) prevStatus.textContent = '已停止';
+                    if (prevBtn) resetAiButton(prevBtn, prevTarget);
+                }
+            }
+
             // 重置状态
+            const controller = new AbortController();
             _aiCurrentTarget = target;
-            _aiAbortController = new AbortController();
+            _aiAbortController = controller;
 
             btn.classList.add('generating');
             btn.innerHTML = '<span class="btn-icon-inline"><span class="icon" style="color:white;width:14px;height:14px;"><svg><use href="#icon-square"/></svg></span> 停止生成</span>';
@@ -4376,7 +4392,7 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
 
             try {
                 await streamGlmApi(prompt, (text, isDone) => {
-                    if (_aiAbortController.signal.aborted) return;
+                    if (!controller || controller.signal.aborted) return;
 
                     if (!isDone) {
                         bodyEl.innerHTML = text + '<span class="ai-cursor"></span>';
@@ -4648,7 +4664,7 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
 
         // ========== 设置页：软件更新（GitHub Releases） ==========
         // 与 android/app/build.gradle 的 versionName 保持一致（网页版无法读原生版本时用它）
-        const APP_VERSION_FALLBACK = '1.1.4';
+        const APP_VERSION_FALLBACK = '1.1.5';
         const GITHUB_REPO_KEY = 'memory_github_repo';
         // 内置发布地址：进设置页会自动从这里检查更新，无需手动配置
         const DEFAULT_GITHUB_REPO = 'yfcybj/memory-app';
@@ -4889,13 +4905,18 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
             if (bodyEl) bodyEl.innerHTML = bodyEl.innerHTML.replace(/<span class="ai-cursor"><\/span>/, '');
         }
 
-        // 重置按钮状态
+        // 重置按钮状态（只清理仍属于自己的全局状态，避免把新任务的状态清掉）
         function resetAiButton(btn, target) {
-            _aiAbortController = null;
-            _aiCurrentTarget = '';
+            if (_aiCurrentTarget === target) {
+                _aiAbortController = null;
+                _aiCurrentTarget = '';
+            }
+            if (!btn) return;
             btn.classList.remove('generating');
             const label = target === 'content' ? 'AI 生成内容' : 'AI 生成备注';
             btn.innerHTML = `<span class="btn-icon-inline"><span class="icon" style="color:white;"><svg><use href="#icon-zap"/></svg></span> ${label}</span>`;
+            // 正文按钮文案随类别变化（古诗词为「AI 生成原文」），复位后同步一次
+            if (target === 'content') updateAiButtonLabels();
         }
 
         // 复制AI输出
