@@ -1325,6 +1325,8 @@
         }
         /* AI 输出的富文本排版：结构由 AI 的 Markdown 决定，不按字数机械缩进 */
         .ai-md-p { white-space: pre-wrap; margin: 0 0 8px; }
+        /* 古诗词原文：多段时每段首行缩进两字（仅 AI 生成预览生效） */
+        .ai-md-p.ai-md-poem { text-indent: 2em; }
         .ai-md-p:last-child { margin-bottom: 0; }
         .ai-md-h { font-weight: 700; color: #2b2f42; margin: 10px 0 6px; font-size: 15px; }
         .ai-md-h1 { font-size: 16px; }
@@ -4455,8 +4457,8 @@
             return AI_CONFIG.endpoint;
         }
 
-        let _aiAbortController = null;
-        let _aiCurrentTarget = '';
+        // 每个生成目标各自持有 AbortController：内容与备注可同时生成，互不中止
+        const _aiAbortControllers = {};
         // 每个目标一个打字机实例，停止生成时用来立刻收尾
         const _aiTypers = {};
         // 记录每个目标「原始生成文本」，填入/复制时按它还原，避免与预览不一致
@@ -4591,32 +4593,15 @@ ${contentVal ? '\n该条目当前的内容是：\n' + contentVal : ''}
             const bodyEl = document.getElementById('aiBody' + capitalizeFirst(target));
             const statusEl = document.getElementById('aiStatus' + capitalizeFirst(target));
 
-            // 如果正在生成中，则停止
-            if (_aiCurrentTarget === target && _aiAbortController) {
-                stopAiGeneration(btn, statusEl, outputArea);
+            // 同一目标再次点击 = 停止它；另一个目标互不干扰，可以同时生成
+            if (_aiAbortControllers[target]) {
+                stopAiGeneration(btn, statusEl, outputArea, target);
                 return;
             }
 
-            // 另一个目标正在生成：先中止它，避免两个任务共用同一个 AbortController
-            if (_aiAbortController) {
-                const prevTarget = _aiCurrentTarget;
-                const prevController = _aiAbortController;
-                _aiAbortController = null;
-                _aiCurrentTarget = '';
-                try { prevController.abort(); } catch (e) { /* 已结束则忽略 */ }
-                if (prevTarget && prevTarget !== target) {
-                    if (_aiTypers[prevTarget]) _aiTypers[prevTarget].stop();
-                    const prevStatus = document.getElementById('aiStatus' + capitalizeFirst(prevTarget));
-                    const prevBtn = document.getElementById(prevTarget === 'content' ? 'btnAiGenerateContent' : 'btnAiGenerateNotes');
-                    if (prevStatus) prevStatus.textContent = '已停止';
-                    if (prevBtn) resetAiButton(prevBtn, prevTarget);
-                }
-            }
-
-            // 重置状态
+            // 重置本目标状态（不触碰另一个目标的控制器与打字机）
             const controller = new AbortController();
-            _aiCurrentTarget = target;
-            _aiAbortController = controller;
+            _aiAbortControllers[target] = controller;
 
             btn.classList.add('generating');
             btn.innerHTML = '<span class="btn-icon-inline"><span class="icon" style="color:white;width:14px;height:14px;"><svg><use href="#icon-square"/></svg></span> 停止生成</span>';
@@ -4626,7 +4611,9 @@ ${contentVal ? '\n该条目当前的内容是：\n' + contentVal : ''}
             statusEl.textContent = 'AI 正在思考...';
 
             // 打字机渲染：与网络快慢解耦，APP 内一次性返回时同样逐个出字
-            const typer = createAiTypewriter(bodyEl);
+            // 古诗词原文：即使分成多段，也每段首行缩进两字（不是按字数机械判断）
+            const poemIndent = target === 'content' && document.getElementById('categorySelect').value === 'poem';
+            const typer = createAiTypewriter(bodyEl, { poemIndent: poemIndent });
             _aiTypers[target] = typer;
 
             try {
@@ -4642,10 +4629,10 @@ ${contentVal ? '\n该条目当前的内容是：\n' + contentVal : ''}
                         typer.finish(() => {
                             if (controller.signal.aborted) return;
                             statusEl.textContent = '生成完成';
-                            resetAiButton(btn, target);
+                            resetAiButton(btn, target, controller);
                         });
                     }
-                });
+                }, null, true, controller.signal);
             } catch (err) {
                 typer.stop();
                 // 已点过「停止生成」：无论随后抛什么错都只显示已停止
@@ -4663,13 +4650,13 @@ ${contentVal ? '\n该条目当前的内容是：\n' + contentVal : ''}
                     statusEl.textContent = '生成失败: ' + (err.message || '网络错误');
                     showToast('AI 生成失败: ' + (err.message || '网络错误'));
                 }
-                resetAiButton(btn, target);
+                resetAiButton(btn, target, controller);
             }
         }
 
         // 打字机渲染：把已收到的文本按固定节奏逐步显示。
         // 网络快时不会「一秒刷完」，APP 内原生插件一次性返回时也能逐个出字。
-        function createAiTypewriter(bodyEl) {
+        function createAiTypewriter(bodyEl, opts) {
             let full = '';
             let shown = 0;
             let timer = null;
@@ -4677,7 +4664,7 @@ ${contentVal ? '\n该条目当前的内容是：\n' + contentVal : ''}
             let stopped = false;
 
             function paint() {
-                bodyEl.innerHTML = renderAiHtml(full.slice(0, shown)) +
+                bodyEl.innerHTML = renderAiHtml(full.slice(0, shown), opts) +
                     (stopped ? '' : '<span class="ai-cursor"></span>');
                 bodyEl.scrollTop = bodyEl.scrollHeight;
             }
@@ -5304,7 +5291,7 @@ ${contentVal ? '\n该条目当前的内容是：\n' + contentVal : ''}
         }
 
         // 整段渲染：按块识别代码块、公式块、表格、列表、标题、引用，其余作为段落
-        function renderAiHtml(raw) {
+        function renderAiHtml(raw, opts) {
             const text = autoFormatFormulas(decodeAiEscapes(raw));
             const lines = text.split('\n');
             const out = [];
@@ -5479,7 +5466,8 @@ ${contentVal ? '\n该条目当前的内容是：\n' + contentVal : ''}
                     i++;
                 }
                 if (buf.length) {
-                    out.push('<div class="ai-md-p">' + renderAiInline(buf.join('\n')) + '</div>');
+                    const cls = 'ai-md-p' + (opts && opts.poemIndent ? ' ai-md-poem' : '');
+                    out.push('<div class="' + cls + '">' + renderAiInline(buf.join('\n')) + '</div>');
                 } else {
                     i++;
                 }
@@ -5671,7 +5659,7 @@ ${contentVal ? '\n该条目当前的内容是：\n' + contentVal : ''}
         }
 
         // 流式调用 AI 接口（OpenAI 兼容协议）
-        async function streamGlmApiOnce(prompt, onChunk, overrideSettings) {
+        async function streamGlmApiOnce(prompt, onChunk, overrideSettings, signal) {
             const settings = overrideSettings ? Object.assign({}, overrideSettings) : refreshAiConfig();
             const endpoint = resolveAiEndpoint();
             const viaProxy = endpoint === AI_CONFIG.proxyPath || endpoint === AI_CONFIG.remoteProxy;
@@ -5743,7 +5731,7 @@ ${contentVal ? '\n该条目当前的内容是：\n' + contentVal : ''}
                     temperature: 0.7,
                     max_tokens: 2048
                 }),
-                signal: _aiAbortController ? _aiAbortController.signal : undefined
+                signal: signal || undefined
             });
 
             if (!response.ok) {
@@ -5779,12 +5767,12 @@ ${contentVal ? '\n该条目当前的内容是：\n' + contentVal : ''}
 
         // 鉴权失败（401 / 令牌过期）时用内置体验 Key 自动重试一次，避免旧 Key 过期后完全不可用。
         // 「测试连接」传 allowFallback=false，保证测到的是用户自己填的 Key。
-        async function streamGlmApi(prompt, onChunk, overrideSettings, allowFallback) {
+        async function streamGlmApi(prompt, onChunk, overrideSettings, allowFallback, signal) {
             const settings = overrideSettings
                 ? Object.assign({}, overrideSettings)
                 : refreshAiConfig();
             try {
-                return await streamGlmApiOnce(prompt, onChunk, overrideSettings);
+                return await streamGlmApiOnce(prompt, onChunk, overrideSettings, signal);
             } catch (err) {
                 const msg = String((err && err.message) || err || '');
                 const isAuthError = /(^|\D)401(\D|$)|令牌已过期|验证不正确|invalid api key|unauthorized/i.test(msg);
@@ -5794,7 +5782,7 @@ ${contentVal ? '\n该条目当前的内容是：\n' + contentVal : ''}
                     && !settings.__fallbackTried
                     && settings.apiKey !== AI_OFFICIAL_DEFAULT.apiKey
                     && /bigmodel\.cn/i.test(endpoint)
-                    && !(_aiAbortController && _aiAbortController.signal.aborted);
+                    && !(signal && signal.aborted);
                 if (!canFallback) throw err;
 
                 const retrySettings = Object.assign({}, settings, {
@@ -5803,7 +5791,7 @@ ${contentVal ? '\n该条目当前的内容是：\n' + contentVal : ''}
                     model: settings.model || AI_OFFICIAL_DEFAULT.model,
                     __fallbackTried: true
                 });
-                const result = await streamGlmApiOnce(prompt, onChunk, retrySettings);
+                const result = await streamGlmApiOnce(prompt, onChunk, retrySettings, signal);
                 console.warn('AI 鉴权失败，已自动切换到内置体验 Key（未改动已保存的设置）');
                 if (typeof showToast === 'function') {
                     showToast('原 API Key 验证失败，本次已自动使用内置体验 Key');
@@ -5914,7 +5902,7 @@ ${contentVal ? '\n该条目当前的内容是：\n' + contentVal : ''}
 
         // ========== 设置页：软件更新（Gitee / GitHub Releases） ==========
         // 与 android/app/build.gradle 的 versionName 保持一致（网页版无法读原生版本时用它）
-        const APP_VERSION_FALLBACK = '1.3.7';
+        const APP_VERSION_FALLBACK = '1.3.8';
         const UPDATE_PLATFORM_KEY = 'memory_update_platform';
         // 各平台分别记住自己的仓库，切换平台时不会互相覆盖
         const UPDATE_REPO_KEYS = { gitee: 'memory_gitee_repo', github: 'memory_github_repo' };
@@ -6272,26 +6260,23 @@ ${contentVal ? '\n该条目当前的内容是：\n' + contentVal : ''}
         // 停止AI生成：必须立即收尾，不能等请求抛 AbortError。
         // APP 内走原生转发（不支持 abort），打字机播放阶段请求也早已结束，
         // 只 abort 的话按钮会一直卡在「停止生成」。
-        function stopAiGeneration(btn, statusEl, outputArea) {
-            const target = _aiCurrentTarget;
-            if (_aiAbortController) {
-                _aiAbortController.abort();
-                _aiAbortController = null;
+        function stopAiGeneration(btn, statusEl, outputArea, target) {
+            const controller = _aiAbortControllers[target];
+            if (controller) {
+                try { controller.abort(); } catch (e) { /* 已结束则忽略 */ }
+                delete _aiAbortControllers[target];
             }
             // 打字机立即停在当前进度并去掉光标
             if (target && _aiTypers[target]) _aiTypers[target].stop();
             const bodyEl = outputArea ? outputArea.querySelector('.ai-output-body') : null;
             if (bodyEl) bodyEl.innerHTML = bodyEl.innerHTML.replace(/<span class="ai-cursor"><\/span>/, '');
             if (statusEl) statusEl.textContent = '已停止';
-            resetAiButton(btn, target);
+            resetAiButton(btn, target, controller);
         }
 
-        // 重置按钮状态（只清理仍属于自己的全局状态，避免把新任务的状态清掉）
-        function resetAiButton(btn, target) {
-            if (_aiCurrentTarget === target) {
-                _aiAbortController = null;
-                _aiCurrentTarget = '';
-            }
+        // 重置按钮状态（只清理传入的那次任务，避免把同目标的重新生成状态清掉）
+        function resetAiButton(btn, target, controller) {
+            if (controller && _aiAbortControllers[target] === controller) delete _aiAbortControllers[target];
             if (_aiTypers[target]) delete _aiTypers[target];
             if (!btn) return;
             btn.classList.remove('generating');
@@ -6337,13 +6322,14 @@ ${contentVal ? '\n该条目当前的内容是：\n' + contentVal : ''}
             const outputArea = document.getElementById('aiOutput' + capitalizeFirst(target));
             outputArea.classList.remove('visible');
 
-            // 如果当前正在生成该目标，也停止
-            if (_aiTypers[target]) _aiTypers[target].stop();
-            if (_aiCurrentTarget === target && _aiAbortController) {
-                _aiAbortController.abort();
-                _aiAbortController = null;
+            // 如果当前正在生成该目标，也停止（另一个目标的生成不受影响）
+            if (_aiTypers[target]) { _aiTypers[target].stop(); delete _aiTypers[target]; }
+            const controller = _aiAbortControllers[target];
+            if (controller) {
+                try { controller.abort(); } catch (e) { /* 已结束则忽略 */ }
+                delete _aiAbortControllers[target];
                 const btnId = target === 'content' ? 'btnAiGenerateContent' : 'btnAiGenerateNotes';
-                resetAiButton(document.getElementById(btnId), target);
+                resetAiButton(document.getElementById(btnId), target, controller);
             }
         }
 
