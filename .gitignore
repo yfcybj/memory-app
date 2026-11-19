@@ -11,5 +11,7 @@ android/capacitor-cordova-android-plugins/
 # 本地临时文件
 *.log
 build_result.txt
+__pycache__/
+*.pyc
 .DS_Store
 Thumbs.db
