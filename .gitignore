@@ -1,0 +1,15 @@
+# 依赖
+node_modules/
+
+# 原生构建产物
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/capacitor-cordova-android-plugins/
+
+# 本地临时文件
+*.log
+build_result.txt
+.DS_Store
+Thumbs.db
