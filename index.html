@@ -1575,7 +1575,7 @@
                         <textarea class="form-textarea" id="contentInput" placeholder="请输入内容" style="flex:1;"></textarea>
                     </div>
                     <button type="button" class="ai-generate-btn" id="btnAiGenerateContent" onclick="aiGenerate('content')">
-                        <span class="btn-icon-inline"><span class="icon" style="color:white;"><svg><use href="#icon-zap"/></svg></span> AI 生成释义</span>
+                        <span class="btn-icon-inline"><span class="icon" style="color:white;"><svg><use href="#icon-zap"/></svg></span> AI 生成内容</span>
                     </button>
                     <div class="ai-output-area" id="aiOutputContent">
                         <div class="ai-output-header">
@@ -2583,7 +2583,7 @@
                 // 古诗词 → 生成原文 / 生成赏析
                 contentBtn.innerHTML = '<span class="btn-icon-inline"><span class="icon" style="color:white;"><svg><use href="#icon-zap"/></svg></span> AI 生成原文</span>';
             } else {
-                contentBtn.innerHTML = '<span class="btn-icon-inline"><span class="icon" style="color:white;"><svg><use href="#icon-zap"/></svg></span> AI 生成释义</span>';
+                contentBtn.innerHTML = '<span class="btn-icon-inline"><span class="icon" style="color:white;"><svg><use href="#icon-zap"/></svg></span> AI 生成内容</span>';
             }
         }
 
@@ -4823,7 +4823,7 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
             _aiAbortController = null;
             _aiCurrentTarget = '';
             btn.classList.remove('generating');
-            const label = target === 'content' ? 'AI 生成释义' : 'AI 生成备注';
+            const label = target === 'content' ? 'AI 生成内容' : 'AI 生成备注';
             btn.innerHTML = `<span class="btn-icon-inline"><span class="icon" style="color:white;"><svg><use href="#icon-zap"/></svg></span> ${label}</span>`;
         }
 
