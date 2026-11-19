@@ -4533,13 +4533,13 @@ ${existingContent ? '\n请在以上基础上进行补充和优化：' : ''}`;
                 // 古诗词备注：生成赏析、背景等
                 if (catId === 'poem') {
                     const contentVal = currentContentForNotes();
-                    prompt = `你是一个专业的古诗词鉴赏助手。请为"${title}"这首诗/词生成实用的学习备注，必须包含白话译文和赏析。
-${contentVal ? '\n该诗词的原文内容是：\n' + contentVal : ''}
+                    prompt = `你是一个专业的古诗词鉴赏助手。请为"${title}"这首诗/词生成实用的学习备注，必须包含白话译文和赏析，不要重复输出诗词原文。
+${contentVal ? '\n参考原文（仅供你理解，输出时不要复述原句）：\n' + contentVal : ''}
 
 要求：
-1. 先给出完整、流畅的白话译文，逐句对应原文，单独成段
+1. 先给出完整、流畅的白话译文，按原文顺序展开，但不要写出原句
 2. 提供作者简介、创作背景（何时何地为何而作）
-3. 再逐句或逐联解读诗句，说明关键字词的含义
+3. 再对关键句做解读，说明关键字词的含义；不要整句抄录原文
 4. 分析艺术手法、意象、意境特点
 5. 总结全诗主题思想与情感基调
 6. 提供便于记忆的关键点或记忆口诀
@@ -5921,7 +5921,7 @@ ${contentVal ? '\n该条目当前的内容是：\n' + contentVal : ''}
 
         // ========== 设置页：软件更新（Gitee / GitHub Releases） ==========
         // 与 android/app/build.gradle 的 versionName 保持一致（网页版无法读原生版本时用它）
-        const APP_VERSION_FALLBACK = '1.5.0';
+        const APP_VERSION_FALLBACK = '1.5.1';
         const UPDATE_PLATFORM_KEY = 'memory_update_platform';
         // 各平台分别记住自己的仓库，切换平台时不会互相覆盖
         const UPDATE_REPO_KEYS = { gitee: 'memory_gitee_repo', github: 'memory_github_repo' };
