@@ -4503,6 +4503,107 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
             })[ch]);
         }
 
+        // SSE 增量解析：把分片文本拼成帧，逐帧取 delta 回调 onChunk(全文, 是否结束)
+        function createSseParser(onChunk) {
+            let buffer = '';
+            let fullText = '';
+            let finished = false;
+
+            function finish() {
+                if (finished) return;
+                finished = true;
+                onChunk(fullText, true);
+            }
+
+            function handleFrame(frame) {
+                if (finished) return;
+                const dataLines = frame.split('\n')
+                    .filter(line => line.startsWith('data:'))
+                    .map(line => line.slice(5).trim());
+                if (!dataLines.length) return;
+
+                const data = dataLines.join('\n');
+                if (data === '[DONE]') {
+                    finish();
+                    return;
+                }
+                try {
+                    const json = JSON.parse(data);
+                    const delta = json.choices?.[0]?.delta?.content;
+                    if (delta) {
+                        fullText += delta;
+                        onChunk(fullText, false);
+                    }
+                } catch (e) {
+                    // 不完整或非 JSON 的帧，忽略
+                }
+            }
+
+            return {
+                push(text) {
+                    if (finished || !text) return;
+                    buffer += text;
+                    const frames = buffer.split('\n\n');
+                    buffer = frames.pop() || ''; // 最后一段可能不完整，留到下次
+                    for (const frame of frames) handleFrame(frame);
+                },
+                flush() {
+                    if (finished) return;
+                    if (buffer.trim()) handleFrame(buffer);
+                    buffer = '';
+                    finish();
+                },
+                isFinished() {
+                    return finished;
+                }
+            };
+        }
+
+        // APP 内流式请求：原生每读到一段就用 aiChunk 事件推过来，首个分片即可显示
+        async function streamViaNative(nativeProxy, settings, prompt, onChunk) {
+            const payload = JSON.stringify({
+                model: settings.model,
+                messages: [{ role: 'user', content: prompt }],
+                stream: true,
+                temperature: 0.7,
+                max_tokens: 2048
+            });
+
+            const parser = createSseParser(onChunk);
+            let handle = null;
+            try {
+                handle = await nativeProxy.addListener('aiChunk', ev => {
+                    parser.push(ev && ev.data ? ev.data : '');
+                });
+            } catch (e) {
+                handle = null;
+            }
+
+            try {
+                const res = await nativeProxy.chatStream({
+                    endpoint: settings.endpoint || '',
+                    apiKey: settings.apiKey || '',
+                    body: payload
+                });
+
+                const status = res && res.status;
+                if (!status || status < 200 || status >= 300) {
+                    let detail = (res && res.body) ? String(res.body).slice(0, 200) : '';
+                    try {
+                        const j = JSON.parse(res.body);
+                        if (j && j.error && j.error.message) detail = j.error.message;
+                    } catch (e) { /* 保留原始文本 */ }
+                    throw new Error('API 错误 ' + (status || '?') + (detail ? '：' + detail : ''));
+                }
+
+                parser.flush();
+            } finally {
+                if (handle && typeof handle.remove === 'function') {
+                    try { await handle.remove(); } catch (e) { /* 忽略 */ }
+                }
+            }
+        }
+
         // 流式调用 AI 接口（OpenAI 兼容协议）
         async function streamGlmApi(prompt, onChunk, overrideSettings) {
             const settings = overrideSettings ? Object.assign({}, overrideSettings) : refreshAiConfig();
@@ -4518,9 +4619,14 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
                 headers['Authorization'] = `Bearer ${settings.apiKey}`;
             }
 
-            // APP 内（Capacitor WebView）同样受跨域限制，改由原生插件转发（一次性返回）
+            // APP 内（Capacitor WebView）同样受跨域限制，改由原生插件转发
             const nativeProxy = getAiProxyPlugin();
             if (nativeProxy && !viaProxy) {
+                // 优先走流式：首字到达就显示，不必等整段生成完
+                if (typeof nativeProxy.chatStream === 'function' && typeof nativeProxy.addListener === 'function') {
+                    return await streamViaNative(nativeProxy, settings, prompt, onChunk);
+                }
+
                 const payload = JSON.stringify({
                     model: settings.model,
                     messages: [{ role: 'user', content: prompt }],
@@ -4590,55 +4696,19 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
 
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
-            let buffer = '';
-            let fullText = '';
+            const parser = createSseParser(onChunk);
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
-
-                buffer += decoder.decode(value, { stream: true });
-
-                // 按双换行符分割SSE消息
-                const lines = buffer.split('\n\n');
-                buffer = lines.pop() || ''; // 保留最后一个不完整的消息
-
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        const data = line.slice(6).trim();
-                        if (data === '[DONE]') {
-                            onChunk(fullText, true);
-                            return;
-                        }
-                        try {
-                            const json = JSON.parse(data);
-                            const delta = json.choices?.[0]?.delta?.content;
-                            if (delta) {
-                                fullText += delta;
-                                onChunk(fullText, false); // 实时回调
-                            }
-                        } catch (e) {
-                            // 忽略解析错误
-                        }
-                    }
+                parser.push(decoder.decode(value, { stream: true }));
+                if (parser.isFinished()) {
+                    try { await reader.cancel(); } catch (e) { /* 忽略 */ }
+                    break;
                 }
             }
 
-            // 处理缓冲区剩余数据
-            if (buffer.startsWith('data: ') && buffer.trim() !== '[DONE]') {
-                const data = buffer.slice(6).trim();
-                if (data !== '[DONE]') {
-                    try {
-                        const json = JSON.parse(data);
-                        const delta = json.choices?.[0]?.delta?.content;
-                        if (delta) {
-                            fullText += delta;
-                        }
-                    } catch (e) {}
-                }
-            }
-
-            onChunk(fullText, true);
+            parser.flush();
         }
 
         // ========== 设置页：AI 配置 ==========
@@ -4744,7 +4814,7 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
 
         // ========== 设置页：软件更新（GitHub Releases） ==========
         // 与 android/app/build.gradle 的 versionName 保持一致（网页版无法读原生版本时用它）
-        const APP_VERSION_FALLBACK = '1.1.7';
+        const APP_VERSION_FALLBACK = '1.1.8';
         const GITHUB_REPO_KEY = 'memory_github_repo';
         // 内置发布地址：进设置页会自动从这里检查更新，无需手动配置
         const DEFAULT_GITHUB_REPO = 'yfcybj/memory-app';

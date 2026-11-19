@@ -10,8 +10,8 @@ android {
         // 发版约定：每次发布新版本时 versionCode 必须 +1，versionName 与
         // GitHub Release 的 tag 保持一致（例如 tag v1.0.2 对应 versionName "1.0.2"），
         // 应用内的「检查更新」就是拿 versionName 和 release tag 比较的。
-        versionCode 9
-        versionName "1.1.7"
+        versionCode 10
+        versionName "1.1.8"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
