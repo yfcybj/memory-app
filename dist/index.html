@@ -2033,14 +2033,14 @@
                 </div>
 
                 <div class="form-group" style="margin-top:18px;">
-                    <label class="form-label">GitHub 更新源（owner/repo）</label>
-                    <input class="form-input" id="githubRepoInput" autocomplete="off" placeholder="例如 yourname/memory-app">
+                    <label class="form-label">更新来源（owner/repo）</label>
+                    <input class="form-input" id="githubRepoInput" autocomplete="off" placeholder="owner/repo">
                     <div style="font-size:12px;color:var(--text-secondary);margin-top:6px;">
-                        从该仓库的 Releases 读取最新版本，安装包需作为 .apk 附件上传。
+                        默认使用内置发布地址，通常无需修改；打开本页会自动检查更新。
                     </div>
                 </div>
 
-                <button class="btn btn-primary btn-block" onclick="checkAppUpdate()" id="btnCheckUpdate">检查更新</button>
+                <button class="btn btn-primary btn-block" onclick="checkAppUpdate()" id="btnCheckUpdate">立即检查更新</button>
                 <div id="updateStatus" style="margin-top:14px;font-size:13px;line-height:1.6;color:var(--text-secondary);"></div>
                 <div id="updateActions" style="display:none;margin-top:12px;"></div>
             </div>
@@ -4549,8 +4549,9 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
             renderAiCurrentText();
 
             const repoInput = document.getElementById('githubRepoInput');
-            if (repoInput) repoInput.value = localStorage.getItem('memory_github_repo') || '';
+            if (repoInput) repoInput.value = getGithubRepo();
             renderAppVersion();
+            autoCheckUpdate();
         }
 
         function fillAiModelOptions(providerKey, currentModel, keepValue) {
@@ -4623,8 +4624,33 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
 
         // ========== 设置页：软件更新（GitHub Releases） ==========
         // 与 android/app/build.gradle 的 versionName 保持一致（网页版无法读原生版本时用它）
-        const APP_VERSION_FALLBACK = '1.1.1';
+        const APP_VERSION_FALLBACK = '1.1.2';
         const GITHUB_REPO_KEY = 'memory_github_repo';
+        // 内置发布地址：进设置页会自动从这里检查更新，无需手动配置
+        const DEFAULT_GITHUB_REPO = 'yfcybj/memory-app';
+
+        function getGithubRepo() {
+            const saved = (localStorage.getItem(GITHUB_REPO_KEY) || '').trim();
+            return /^[\w.-]+\/[\w.-]+$/.test(saved) ? saved : DEFAULT_GITHUB_REPO;
+        }
+
+        // 把 Release 说明里的 markdown 符号清掉，按纯文本展示
+        function formatReleaseNotes(text) {
+            return String(text || '')
+                .replace(/\r\n/g, '\n')
+                .replace(/^#{1,6}\s*/gm, '')
+                .replace(/\*\*([^*]+)\*\*/g, '$1')
+                .replace(/`([^`]+)`/g, '$1')
+                .replace(/^\s*[-*]\s+/gm, '· ')
+                .trim();
+        }
+
+        // 进入设置页自动检查一次（60 秒内不重复请求，避免 GitHub 限流）
+        function autoCheckUpdate() {
+            const now = Date.now();
+            if (window._lastUpdateCheck && now - window._lastUpdateCheck < 60000) return;
+            checkAppUpdate({ silent: true });
+        }
 
         function isNativeApp() {
             return !!(window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function'
@@ -4702,11 +4728,13 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
             return 0;
         }
 
-        async function checkAppUpdate() {
+        async function checkAppUpdate(options) {
+            const silent = !!(options && options.silent);
             const status = document.getElementById('updateStatus');
             const actions = document.getElementById('updateActions');
             const btn = document.getElementById('btnCheckUpdate');
-            const repo = (document.getElementById('githubRepoInput').value || '').trim();
+            const repoInput = document.getElementById('githubRepoInput');
+            const repo = ((repoInput && repoInput.value) || getGithubRepo()).trim();
 
             actions.style.display = 'none';
             actions.innerHTML = '';
@@ -4716,11 +4744,12 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
                 return;
             }
             localStorage.setItem(GITHUB_REPO_KEY, repo);
+            window._lastUpdateCheck = Date.now();
 
             const oldText = btn.textContent;
             btn.disabled = true;
             btn.textContent = '检查中…';
-            status.textContent = '正在检查更新…';
+            if (!silent) status.textContent = '正在检查更新…';
 
             try {
                 const resp = await fetch('https://api.github.com/repos/' + repo + '/releases/latest', {
@@ -4738,30 +4767,48 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
                 if (!latest) throw new Error('无法解析版本号');
 
                 if (compareVersion(latest, currentVersion) <= 0) {
-                    status.textContent = '已是最新版本（当前 v' + currentVersion + '，最新 v' + latest + '）';
+                    status.innerHTML = '<span style="color:#2E7D32;">已是最新版本</span>'
+                        + '<span style="color:var(--text-secondary);"> · 当前 v' + escapeHtml(currentVersion) + '</span>';
                     return;
                 }
 
                 const apkAsset = (release.assets || []).find(a => /\.apk$/i.test(a.name || ''));
-                let html = '发现新版本 <strong>v' + latest + '</strong>（当前 v' + currentVersion + '）';
-                if (release.body) {
-                    html += '<br><span style="display:block;margin-top:6px;white-space:pre-wrap;">'
-                        + escapeHtml(String(release.body).slice(0, 400)) + '</span>';
+                const sizeText = apkAsset ? (apkAsset.size / 1048576).toFixed(1) + ' MB' : '';
+                const published = release.published_at ? String(release.published_at).slice(0, 10) : '';
+
+                let html = '<div style="background:#F1F8E9;border-radius:12px;padding:12px;">'
+                    + '<div style="font-weight:600;color:#2E7D32;font-size:15px;">发现新版本 v' + escapeHtml(latest) + '</div>'
+                    + '<div style="font-size:12px;color:#666;margin-top:4px;">当前 v' + escapeHtml(currentVersion)
+                    + (sizeText ? ' · 安装包 ' + sizeText : '')
+                    + (published ? ' · 发布于 ' + escapeHtml(published) : '')
+                    + '</div></div>';
+
+                const notes = formatReleaseNotes(release.body);
+                if (notes) {
+                    html += '<div style="margin-top:10px;font-size:12px;color:var(--text-secondary);">更新说明</div>'
+                        + '<div style="max-height:190px;overflow-y:auto;margin-top:6px;padding:10px 12px;background:#FAFAFA;border-radius:10px;font-size:13px;line-height:1.7;color:#444;white-space:pre-wrap;">'
+                        + escapeHtml(notes) + '</div>';
                 }
+
                 if (!apkAsset) {
-                    html += '<br><span style="color:#E53935;">该 Release 没有上传 .apk 附件，无法自动更新</span>';
+                    html += '<div style="margin-top:10px;color:#E53935;font-size:13px;">该 Release 没有上传 .apk 附件，无法自动更新</div>';
                     status.innerHTML = html;
                     return;
                 }
+
                 status.innerHTML = html;
 
                 actions.style.display = 'block';
-                actions.innerHTML = '<button class="btn btn-primary btn-block" id="btnDoUpdate">立即更新到 v' + latest + '</button>';
+                actions.innerHTML = '<button class="btn btn-primary btn-block" id="btnDoUpdate">下载并安装 v' + escapeHtml(latest) + '</button>';
                 document.getElementById('btnDoUpdate').onclick = function () {
                     startAppUpdate(apkAsset.browser_download_url, 'v' + latest);
                 };
             } catch (err) {
-                status.textContent = '检查失败：' + (err.message || '网络错误');
+                if (silent) {
+                    status.textContent = '暂时没法检查更新（' + (err.message || '网络错误') + '），可点上方按钮重试';
+                } else {
+                    status.textContent = '检查失败：' + (err.message || '网络错误');
+                }
             } finally {
                 btn.disabled = false;
                 btn.textContent = oldText;
