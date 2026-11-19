@@ -4273,6 +4273,8 @@
 
         let _aiAbortController = null;
         let _aiCurrentTarget = '';
+        // 每个目标一个打字机实例，停止生成时用来立刻收尾
+        const _aiTypers = {};
 
         // 构建AI提示词
         function buildAiPrompt(target) {
@@ -4372,6 +4374,7 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
                 _aiCurrentTarget = '';
                 try { prevController.abort(); } catch (e) { /* 已结束则忽略 */ }
                 if (prevTarget && prevTarget !== target) {
+                    if (_aiTypers[prevTarget]) _aiTypers[prevTarget].stop();
                     const prevStatus = document.getElementById('aiStatus' + capitalizeFirst(prevTarget));
                     const prevBtn = document.getElementById(prevTarget === 'content' ? 'btnAiGenerateContent' : 'btnAiGenerateNotes');
                     if (prevStatus) prevStatus.textContent = '已停止';
@@ -4390,23 +4393,28 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
             outputArea.classList.add('visible');
             statusEl.textContent = 'AI 正在思考...';
 
+            // 打字机渲染：与网络快慢解耦，APP 内一次性返回时同样逐个出字
+            const typer = createAiTypewriter(bodyEl);
+            _aiTypers[target] = typer;
+
             try {
                 await streamGlmApi(prompt, (text, isDone) => {
                     if (!controller || controller.signal.aborted) return;
 
-                    if (!isDone) {
-                        bodyEl.innerHTML = text + '<span class="ai-cursor"></span>';
-                        statusEl.textContent = 'AI 正在生成中...';
+                    typer.setFull(text);
 
-                        // 自动滚动到底部
-                        bodyEl.scrollTop = bodyEl.scrollHeight;
+                    if (!isDone) {
+                        statusEl.textContent = 'AI 正在生成中...';
                     } else {
-                        bodyEl.innerHTML = text; // 移除光标
-                        statusEl.textContent = '生成完成';
-                        resetAiButton(btn, target);
+                        typer.finish(() => {
+                            if (controller.signal.aborted) return;
+                            statusEl.textContent = '生成完成';
+                            resetAiButton(btn, target);
+                        });
                     }
                 });
             } catch (err) {
+                typer.stop();
                 if (err.name === 'AbortError') {
                     statusEl.textContent = '已停止';
                 } else if (err.name === 'TypeError' || /Failed to fetch|NetworkError|Load failed/i.test(err.message || '')) {
@@ -4421,6 +4429,75 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
                 }
                 resetAiButton(btn, target);
             }
+        }
+
+        // 打字机渲染：把已收到的文本按固定节奏逐步显示。
+        // 网络快时不会「一秒刷完」，APP 内原生插件一次性返回时也能逐个出字。
+        function createAiTypewriter(bodyEl) {
+            let full = '';
+            let shown = 0;
+            let timer = null;
+            let doneCallback = null;
+            let stopped = false;
+
+            function paint() {
+                bodyEl.innerHTML = escapeHtml(full.slice(0, shown)) +
+                    (stopped ? '' : '<span class="ai-cursor"></span>');
+                bodyEl.scrollTop = bodyEl.scrollHeight;
+            }
+
+            function stopTimer() {
+                if (timer) { clearInterval(timer); timer = null; }
+            }
+
+            function tick() {
+                if (stopped) { stopTimer(); return; }
+
+                if (shown < full.length) {
+                    const remaining = full.length - shown;
+                    // 剩余越多一次多打几个字，长文本不会播太久
+                    const step = Math.min(6, Math.max(1, Math.ceil(remaining / 24)));
+                    shown = Math.min(full.length, shown + step);
+                }
+                paint();
+
+                // 文本播完且生成已结束，收尾
+                if (shown >= full.length && doneCallback) {
+                    stopped = true;
+                    paint();
+                    stopTimer();
+                    const cb = doneCallback;
+                    doneCallback = null;
+                    cb();
+                }
+            }
+
+            function ensureTimer() {
+                if (!timer && !stopped) timer = setInterval(tick, 24);
+            }
+
+            return {
+                setFull(text) {
+                    full = text;
+                    ensureTimer();
+                },
+                finish(cb) {
+                    doneCallback = cb;
+                    ensureTimer();
+                    tick();
+                },
+                stop() {
+                    stopped = true;
+                    stopTimer();
+                    paint();
+                }
+            };
+        }
+
+        function escapeHtml(text) {
+            return String(text).replace(/[&<>"']/g, ch => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[ch]);
         }
 
         // 流式调用 AI 接口（OpenAI 兼容协议）
@@ -4664,7 +4741,7 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
 
         // ========== 设置页：软件更新（GitHub Releases） ==========
         // 与 android/app/build.gradle 的 versionName 保持一致（网页版无法读原生版本时用它）
-        const APP_VERSION_FALLBACK = '1.1.5';
+        const APP_VERSION_FALLBACK = '1.1.6';
         const GITHUB_REPO_KEY = 'memory_github_repo';
         // 内置发布地址：进设置页会自动从这里检查更新，无需手动配置
         const DEFAULT_GITHUB_REPO = 'yfcybj/memory-app';
@@ -4897,10 +4974,13 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
 
         // 停止AI生成
         function stopAiGeneration(btn, statusEl, outputArea) {
+            const target = _aiCurrentTarget;
             if (_aiAbortController) {
                 _aiAbortController.abort();
                 _aiAbortController = null;
             }
+            // 打字机立即停在当前进度并去掉光标
+            if (target && _aiTypers[target]) _aiTypers[target].stop();
             const bodyEl = outputArea.querySelector('.ai-output-body');
             if (bodyEl) bodyEl.innerHTML = bodyEl.innerHTML.replace(/<span class="ai-cursor"><\/span>/, '');
         }
@@ -4911,6 +4991,7 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
                 _aiAbortController = null;
                 _aiCurrentTarget = '';
             }
+            if (_aiTypers[target]) delete _aiTypers[target];
             if (!btn) return;
             btn.classList.remove('generating');
             const label = target === 'content' ? 'AI 生成内容' : 'AI 生成备注';
@@ -4948,6 +5029,7 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
             outputArea.classList.remove('visible');
 
             // 如果当前正在生成该目标，也停止
+            if (_aiTypers[target]) _aiTypers[target].stop();
             if (_aiCurrentTarget === target && _aiAbortController) {
                 _aiAbortController.abort();
                 _aiAbortController = null;
