@@ -1,9 +1,0 @@
-{
-  "appId": "com.memory.app",
-  "appName": "艾记助手",
-  "webDir": "dist",
-  "bundledWebRuntime": false,
-  "server": {
-    "androidScheme": "https"
-  }
-}
