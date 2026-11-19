@@ -8,6 +8,7 @@
     <meta name="theme-color" content="#4CAF50">
     <meta name="description" content="基于艾宾浩斯遗忘曲线的科学记忆应用">
     <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="katex/katex.min.css">
     <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect fill='%234CAF50' width='180' height='180' rx='40'/><text x='50%' y='55%' dominant-baseline='middle' text-anchor='middle' font-size='100'>🧠</text></svg>">
     <title>艾宾浩斯记忆助手</title>
     <style>
@@ -2204,6 +2205,7 @@
         </div>
     </div>
 
+    <script src="katex/katex.min.js"></script>
     <script>
         // ========== PWA Service Worker 注册 ==========
         if ('serviceWorker' in navigator) {
@@ -4601,8 +4603,39 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
             bar: '', overline: '', hat: '', widehat: '', vec: '', dot: '', ddot: ''
         };
 
-        // LaTeX → 可显示的 HTML（分数、根号、上下标、希腊字母与运算符）
-        function latexToHtml(src) {
+        const _katexCache = new Map();
+
+        // LaTeX → 书面公式：优先用内置 KaTeX 渲染（与教材/Word 公式观感一致），未加载时退回简易排版
+        function latexToHtml(src, displayMode) {
+            const tex = String(src == null ? '' : src).trim();
+            if (!tex) return '';
+
+            const katex = (typeof window !== 'undefined') ? window.katex : null;
+            if (katex && typeof katex.renderToString === 'function') {
+                const key = (displayMode ? 'D:' : 'I:') + tex;
+                if (_katexCache.has(key)) return _katexCache.get(key);
+                try {
+                    const html = katex.renderToString(tex, {
+                        displayMode: !!displayMode,
+                        throwOnError: false,
+                        strict: false,
+                        output: 'html',
+                        trust: false
+                    });
+                    if (html) {
+                        if (_katexCache.size > 400) _katexCache.clear();
+                        _katexCache.set(key, html);
+                        return html;
+                    }
+                } catch (e) {
+                    // 解析失败时走兜底排版
+                }
+            }
+            return latexToFallback(tex);
+        }
+
+        // 兜底排版（KaTeX 不可用时）：分数、根号、上下标、希腊字母与运算符
+        function latexToFallback(src) {
             let s = escapeHtml(String(src == null ? '' : src).trim());
 
             s = s.replace(/\\(left|right|displaystyle|textstyle|limits|nolimits)\b/g, '');
@@ -4651,6 +4684,14 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
         function decodeAiEscapes(raw) {
             let s = String(raw == null ? '' : raw);
 
+            // 公式片段先整体保护：内部反斜杠是 LaTeX 语法，不能被反转义破坏
+            const maths = [];
+            s = s.replace(/(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\$[^$\n]+\$|\\\([\s\S]*?\\\))/g, m => {
+                // 只把「\\命令」这种双重转义还原成单反斜杠，保留 \\ 换行
+                maths.push(m.replace(/\\\\(?=[A-Za-z])/g, '\\'));
+                return '\uE000' + (maths.length - 1) + '\uE001';
+            });
+
             // \uXXXX（含 emoji 的代理对）
             s = s.replace(/\\u([0-9a-fA-F]{4})/g, (m, hex) => String.fromCharCode(parseInt(hex, 16)));
             s = s.replace(/\\x([0-9a-fA-F]{2})/g, (m, hex) => String.fromCharCode(parseInt(hex, 16)));
@@ -4669,6 +4710,8 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
                 .replace(/&amp;/gi, '&');
             // 去掉不可见控制字符（保留换行与制表）
             s = s.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+            // 还原公式片段
+            s = s.replace(/\uE000(\d+)\uE001/g, (m, idx) => maths[Number(idx)] || '');
             return s;
         }
 
@@ -4756,7 +4799,7 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
                 if (trimmed.startsWith('$$')) {
                     const rest = trimmed.slice(2);
                     if (rest.endsWith('$$') && rest.length > 2) {
-                        out.push('<div class="ai-math ai-math-block">' + latexToHtml(rest.slice(0, -2)) + '</div>');
+                        out.push(latexToHtml(rest.slice(0, -2), true));
                         i++;
                         continue;
                     }
@@ -4766,7 +4809,40 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
                     }
                     if (end > i) {
                         const body = lines.slice(i + 1, end).concat([lines[end].trim().replace(/\$\$$/, '')]);
-                        out.push('<div class="ai-math ai-math-block">' + latexToHtml(body.join(' ')) + '</div>');
+                        out.push(latexToHtml(body.join('\n'), true));
+                        i = end + 1;
+                        continue;
+                    }
+                }
+
+                // 块级公式 \[ ... \]
+                if (/^\\\[/.test(trimmed)) {
+                    const rest = trimmed.slice(2);
+                    if (/\\\]$/.test(rest)) {
+                        out.push(latexToHtml(rest.replace(/\\\]$/, ''), true));
+                        i++;
+                        continue;
+                    }
+                    let end = -1;
+                    for (let j = i + 1; j < lines.length; j++) {
+                        if (/\\\]$/.test(lines[j].trim())) { end = j; break; }
+                    }
+                    if (end > i) {
+                        const body = lines.slice(i + 1, end).concat([lines[end].trim().replace(/\\\]$/, '')]);
+                        out.push(latexToHtml(body.join('\n'), true));
+                        i = end + 1;
+                        continue;
+                    }
+                }
+
+                // 裸环境写法：\begin{aligned} ... \end{aligned}
+                if (/^\\begin\{/.test(trimmed)) {
+                    let end = -1;
+                    for (let j = i; j < lines.length; j++) {
+                        if (/\\end\{[^}]+\}/.test(lines[j])) { end = j; break; }
+                    }
+                    if (end >= i) {
+                        out.push(latexToHtml(lines.slice(i, end + 1).join('\n'), true));
                         i = end + 1;
                         continue;
                     }
@@ -5174,7 +5250,7 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
 
         // ========== 设置页：软件更新（GitHub Releases） ==========
         // 与 android/app/build.gradle 的 versionName 保持一致（网页版无法读原生版本时用它）
-        const APP_VERSION_FALLBACK = '1.2.1';
+        const APP_VERSION_FALLBACK = '1.3.0';
         const GITHUB_REPO_KEY = 'memory_github_repo';
         // 内置发布地址：进设置页会自动从这里检查更新，无需手动配置
         const DEFAULT_GITHUB_REPO = 'yfcybj/memory-app';
