@@ -83,6 +83,8 @@ public class AiProxyPlugin extends Plugin {
         final String endpoint = call.getString("endpoint", "");
         final String apiKey = call.getString("apiKey", "");
         final String body = call.getString("body", "{}");
+        // 并发生成时 aiChunk 是全局广播，必须带请求标识让 JS 侧只接自己的分片
+        final String requestId = call.getString("requestId", "");
 
         if (endpoint == null || endpoint.isEmpty()) {
             call.reject("缺少接口地址");
@@ -126,6 +128,7 @@ public class AiProxyPlugin extends Plugin {
                 int n;
                 while ((n = br.read(buf)) > 0) {
                     JSObject chunk = new JSObject();
+                    chunk.put("requestId", requestId);
                     chunk.put("data", new String(buf, 0, n));
                     notifyListeners("aiChunk", chunk);
                 }
