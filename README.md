@@ -9,7 +9,7 @@
 - 学习、添加、管理、统计、备份、设置六个页面
 - 数据保存在本机（LocalStorage），支持 JSON 导出 / 导入 / 复制
 - AI 生成原文、释义、赏析或记忆口诀（设置页可切换服务商）
-- 安卓端支持从 GitHub Releases 检查并安装更新
+- 安卓端支持从 GitHub / Gitee Releases 检查并安装更新
 
 ## 网页版运行
 
@@ -58,16 +58,18 @@ versionCode 2
 versionName "1.1.0"
 ```
 
-`versionName` 必须与 GitHub Release 的 tag 一致，应用内更新靠它比较版本。
+`versionName` 必须与 Release 的 tag 一致（tag 带不带 `v` 前缀都可以），应用内更新靠它比较版本。
 
 ## 应用内更新
 
-APP 的「设置 → 软件更新」从 GitHub Releases 读取最新版本：
+APP 的「设置 → 软件更新」支持 **Gitee** 与 **GitHub** 两个平台，各自记住自己的仓库：
 
 1. 把 `versionCode + 1`、`versionName` 改为要发布的 tag（如 `1.1.1`）
 2. 构建 APK
-3. 在 GitHub 创建 Release，tag 填 `v1.1.1`，**把 APK 作为附件上传**
-4. APP 内填仓库 `用户名/仓库名` → 检查更新 → 立即更新
+3. 在 Gitee 或 GitHub 创建 Release，tag 填 `v1.1.1`，**把 APK 作为附件上传**
+4. APP 内选平台、填仓库 `用户名/仓库名` → 检查更新 → 立即更新
+
+默认平台为 Gitee（仓库 `ycxqs/memory-app`，GitHub 为 `yfcybj/memory-app`）。若所选平台没有可用的 Release（仓库不存在、未发布、接口受限），会自动换另一个平台重试，并在结果里注明「本次结果来自 XXX」。
 
 安装流程走系统 `DownloadManager` + `FileProvider` + 安装器，首次需要在系统设置里允许「安装未知应用」。
 

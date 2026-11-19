@@ -369,6 +369,30 @@
             resize: vertical;
         }
 
+        /* 输入框的公式排版视图：失焦时替换 textarea，点击回到编辑 */
+        .rich-field { position: relative; }
+        .rich-field > textarea { display: block; width: 100%; }
+        .rich-field > .rich-view { display: none; }
+        .rich-field.rich-active > textarea { display: none; }
+        .rich-field.rich-active > .rich-view {
+            display: block;
+            min-height: 120px;
+            max-height: 420px;
+            overflow-y: auto;
+            padding: 12px 14px;
+            border: 2px solid var(--border);
+            border-radius: 10px;
+            background: var(--card-bg);
+            font-size: 15px;
+            line-height: 1.75;
+            color: var(--text);
+            cursor: text;
+        }
+        .rich-field.rich-active > .rich-view > div { margin: 0 0 6px; }
+        .rich-field.rich-active > .rich-view > div:last-child { margin-bottom: 0; }
+        .rich-field.rich-active > .rich-view .ai-md-ol,
+        .rich-field.rich-active > .rich-view .ai-md-ul { padding-left: 22px; }
+
         /* 复习卡片 */
         .review-card {
             background: var(--card-bg);
@@ -395,11 +419,17 @@
             padding: 20px;
             border-radius: 12px;
             font-size: 14px;
+            line-height: 1.7;
             margin-bottom: 24px;
             display: none;
             word-break: break-word;
-            white-space: pre-wrap;
+            text-align: left;
+            /* 内容按块渲染（段落/列表/公式），不再依赖 pre-wrap */
+            white-space: normal;
         }
+        .review-answer > div { margin-bottom: 6px; }
+        .review-answer > div:last-child { margin-bottom: 0; }
+        .review-answer .katex-display { margin: 8px 0; }
 
         .review-answer.show {
             display: block;
@@ -536,8 +566,11 @@
             display: none;
             word-break: break-word;
             line-height: 1.6;
-            white-space: pre-wrap;
+            text-align: left;
+            white-space: normal;
         }
+        .review-notes > div { margin-bottom: 6px; }
+        .review-notes > div:last-child { margin-bottom: 0; }
 
         .review-notes.show {
             display: block;
@@ -1292,6 +1325,8 @@
         }
         /* AI 输出的富文本排版 */
         .ai-md-p { white-space: pre-wrap; margin: 0 0 8px; }
+        /* 成段正文首行缩进两字（诗句这类短行不缩进） */
+        .ai-md-p.ai-md-indent { text-indent: 2em; }
         .ai-md-p:last-child { margin-bottom: 0; }
         .ai-md-h { font-weight: 700; color: #2b2f42; margin: 10px 0 6px; font-size: 15px; }
         .ai-md-h1 { font-size: 16px; }
@@ -1636,9 +1671,12 @@
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">释义 / 翻译 / 含义</label>
+                    <label class="form-label" id="contentLabel">释义 / 翻译 / 含义</label>
                     <div class="ai-input-row">
-                        <textarea class="form-textarea" id="contentInput" placeholder="请输入内容" style="flex:1;"></textarea>
+                        <div class="rich-field" style="flex:1;min-width:0;">
+                            <textarea class="form-textarea" id="contentInput" placeholder="请输入内容"></textarea>
+                            <div class="rich-view" id="contentView"></div>
+                        </div>
                     </div>
                     <button type="button" class="ai-generate-btn" id="btnAiGenerateContent" onclick="aiGenerate('content')">
                         <span class="btn-icon-inline"><span class="icon" style="color:white;"><svg><use href="#icon-zap"/></svg></span> AI 生成内容</span>
@@ -1659,7 +1697,10 @@
                 <div class="form-group">
                     <label class="form-label">备注 / 例句（可选）</label>
                     <div class="ai-input-row">
-                        <textarea class="form-textarea" id="notesInput" placeholder="可以添加备注或例句" style="flex:1;"></textarea>
+                        <div class="rich-field" style="flex:1;min-width:0;">
+                            <textarea class="form-textarea" id="notesInput" placeholder="可以添加备注或例句"></textarea>
+                            <div class="rich-view" id="notesView"></div>
+                        </div>
                     </div>
                     <button type="button" class="ai-generate-btn" id="btnAiGenerateNotes" onclick="aiGenerate('notes')">
                         <span class="btn-icon-inline"><span class="icon" style="color:white;"><svg><use href="#icon-zap"/></svg></span> AI 生成备注</span>
@@ -1833,12 +1874,18 @@
 
                 <div class="form-group">
                     <label class="form-label">释义 / 翻译 / 含义</label>
-                    <textarea class="form-textarea" id="editContent" style="min-height:80px;"></textarea>
+                    <div class="rich-field">
+                        <textarea class="form-textarea" id="editContent" style="min-height:80px;"></textarea>
+                        <div class="rich-view" id="editContentView" style="min-height:80px;"></div>
+                    </div>
                 </div>
 
                 <div class="form-group">
                     <label class="form-label">备注 / 例句（可选）</label>
-                    <textarea class="form-textarea" id="editNotes" style="min-height:60px;"></textarea>
+                    <div class="rich-field">
+                        <textarea class="form-textarea" id="editNotes" style="min-height:60px;"></textarea>
+                        <div class="rich-view" id="editNotesView" style="min-height:60px;"></div>
+                    </div>
                 </div>
 
                 <div class="form-group">
@@ -2099,9 +2146,17 @@
                 </div>
 
                 <div class="form-group" style="margin-top:18px;">
+                    <label class="form-label">更新平台</label>
+                    <select class="form-select" id="updatePlatformSelect" onchange="onUpdatePlatformChange()">
+                        <option value="gitee">Gitee（默认）</option>
+                        <option value="github">GitHub</option>
+                    </select>
+                </div>
+
+                <div class="form-group" style="margin-top:12px;">
                     <label class="form-label">更新来源（owner/repo）</label>
                     <input class="form-input" id="githubRepoInput" autocomplete="off" placeholder="owner/repo">
-                    <div style="font-size:12px;color:var(--text-secondary);margin-top:6px;">
+                    <div id="updateRepoHint" style="font-size:12px;color:var(--text-secondary);margin-top:6px;">
                         默认使用内置发布地址，通常无需修改；打开本页会自动检查更新。
                     </div>
                 </div>
@@ -2419,7 +2474,14 @@
             { id: 'poem', name: '古诗词', icon: 'cat-scroll', bgColor: '#E8F5E9', textColor: '#4CAF50' },
             { id: 'word', name: '单词', icon: 'cat-open', bgColor: '#E3F2FD', textColor: '#2196F3' },
             { id: 'idiom', name: '成语', icon: 'cat-trophy', bgColor: '#FFF3E0', textColor: '#FF9800' },
+            { id: 'formula', name: '公式定理', icon: 'cat-ruler', bgColor: '#EDE7F6', textColor: '#673AB7' },
+            { id: 'quote', name: '名人名言', icon: 'cat-star', bgColor: '#FCE4EC', textColor: '#E91E63' },
+            { id: 'history', name: '历史常识', icon: 'cat-newspaper', bgColor: '#EFEBE9', textColor: '#795548' },
+            { id: 'geography', name: '地理常识', icon: 'cat-globe', bgColor: '#E0F7FA', textColor: '#00ACC1' },
         ];
+
+        // 内置类型 id（不可删除）
+        const BUILTIN_CATEGORY_IDS = DEFAULT_CATEGORIES.map(c => c.id);
 
         // 预设颜色和图标（供新建时选择）
         const COLOR_PRESETS = [
@@ -2456,12 +2518,28 @@
         }
 
         function getCategories() {
-            let cats = localStorage.getItem(CATEGORIES_KEY);
-            if (!cats) {
+            const raw = localStorage.getItem(CATEGORIES_KEY);
+            if (!raw) {
                 localStorage.setItem(CATEGORIES_KEY, JSON.stringify(DEFAULT_CATEGORIES));
-                return [...DEFAULT_CATEGORIES];
+                return DEFAULT_CATEGORIES.map(c => ({ ...c }));
             }
-            return JSON.parse(cats);
+
+            let cats;
+            try { cats = JSON.parse(raw); } catch (e) { cats = []; }
+            if (!Array.isArray(cats)) cats = [];
+
+            // 老版本只存了 3 个内置类型：把后来新增的内置类型补进来，
+            // 已存在的不动（保留用户改过的图标/颜色/名称）
+            const existing = new Set(cats.filter(Boolean).map(c => c.id));
+            let changed = false;
+            DEFAULT_CATEGORIES.forEach(def => {
+                if (!existing.has(def.id)) {
+                    cats.push({ ...def });
+                    changed = true;
+                }
+            });
+            if (changed) saveCategories(cats);
+            return cats;
         }
 
         function saveCategories(cats) {
@@ -2500,7 +2578,7 @@
         }
 
         function deleteCategory(catId) {
-            if (['poem','word','idiom'].includes(catId)) return false; // 内置不可删
+            if (BUILTIN_CATEGORY_IDS.includes(catId)) return false; // 内置不可删
             let cats = getCategories();
             cats = cats.filter(c => c.id !== catId);
             saveCategories(cats);
@@ -2649,9 +2727,45 @@
             if (catId === 'poem') {
                 // 古诗词 → 生成原文 / 生成赏析
                 contentBtn.innerHTML = '<span class="btn-icon-inline"><span class="icon" style="color:white;"><svg><use href="#icon-zap"/></svg></span> AI 生成原文</span>';
+            } else if (catId === 'formula') {
+                contentBtn.innerHTML = '<span class="btn-icon-inline"><span class="icon" style="color:white;"><svg><use href="#icon-zap"/></svg></span> AI 生成公式</span>';
+            } else if (catId === 'quote') {
+                contentBtn.innerHTML = '<span class="btn-icon-inline"><span class="icon" style="color:white;"><svg><use href="#icon-zap"/></svg></span> AI 生成名句</span>';
             } else {
                 contentBtn.innerHTML = '<span class="btn-icon-inline"><span class="icon" style="color:white;"><svg><use href="#icon-zap"/></svg></span> AI 生成内容</span>';
             }
+
+            const notesBtn = document.getElementById('btnAiGenerateNotes');
+            if (notesBtn) {
+                notesBtn.innerHTML = catId === 'poem'
+                    ? '<span class="btn-icon-inline"><span class="icon" style="color:white;"><svg><use href="#icon-zap"/></svg></span> AI 生成赏析</span>'
+                    : '<span class="btn-icon-inline"><span class="icon" style="color:white;"><svg><use href="#icon-zap"/></svg></span> AI 生成备注</span>';
+            }
+
+            // 内容框标题/占位符随类型变化
+            updateContentFieldLabel();
+        }
+
+        // 内容框的标题与占位符：古诗词=诗词原文，公式=公式/定义 …
+        function updateContentFieldLabel() {
+            const sel = document.getElementById('categorySelect');
+            if (!sel) return;
+            const catId = sel.value;
+            const label = document.getElementById('contentLabel');
+            const input = document.getElementById('contentInput');
+
+            const map = {
+                poem: ['古诗词原文', '请输入或生成古诗词原文'],
+                word: ['释义 / 翻译', '请输入释义或翻译'],
+                idiom: ['释义 / 含义', '请输入成语释义'],
+                formula: ['公式 / 定义', '请输入公式、符号含义与适用条件'],
+                quote: ['名句原文', '请输入名句原文与出处'],
+                history: ['内容要点', '请输入时间、人物、事件等要点'],
+                geography: ['内容要点', '请输入位置、地形、气候等要点']
+            };
+            const row = map[catId] || ['释义 / 翻译 / 含义', '请输入内容'];
+            if (label) label.textContent = row[0];
+            if (input) input.placeholder = row[1];
         }
 
         function capitalize(str) {
@@ -2840,10 +2954,10 @@
                     <div class="due-item" onclick="viewItemDetail('${item.id}')" style="border-left-color:${ci.textColor};cursor:pointer;">
                         <span class="due-item-icon">${renderCatIcon(ci.icon)}</span>
                         <div class="due-item-info">
-                            <div class="due-item-title">${item.title}</div>
+                            <div class="due-item-title">${escapeHtml(item.title)}</div>
                             <div class="due-item-meta">
                                 <span>${ci.name}</span>
-                                <span style="color:#BDBDBD;">${preview}</span>
+                                <span style="color:#BDBDBD;">${escapeHtml(preview)}</span>
                             </div>
                         </div>
                         <span class="due-item-count" style="background-color:${ci.textColor}">${renderCatIcon(ci.icon)}</span>
@@ -2918,6 +3032,8 @@
             document.getElementById('contentInput').value = '';
             document.getElementById('notesInput').value = '';
             document.getElementById('startTimeInput').value = todayStr;
+            resetRichField('contentInput');
+            resetRichField('notesInput');
 
             showToast('保存成功！明天记得复习哦～');
             showPage('learn');
@@ -3000,7 +3116,7 @@
                             </div>
                         </div>
                         <div style="font-weight:600;margin:8px 0;">${item.title}</div>
-                        <div class="manage-item-preview">${item.content}</div>
+                        <div class="manage-item-preview">${escapeHtml((item.content || '').slice(0, 80))}</div>
                         <div class="manage-item-meta">
                             <span class="status-badge ${statusClass}">${statusText}</span>
                             <span><span class="btn-icon-inline" style="font-size:11px;"><span class="icon" style="width:12px;height:12px;"><svg><use href="#icon-file-text"/></svg></span> 复习</span> ${item.reviewCount} 次</span>
@@ -3048,6 +3164,9 @@
             };
 
             document.getElementById('editModal').classList.add('show');
+            // 打开编辑时先按公式排版显示（点击可回到编辑）
+            refreshRichField('editContent');
+            refreshRichField('editNotes');
         }
 
         function isEditChanged() {
@@ -3420,15 +3539,15 @@
                 </div>
                 <div style="margin-bottom:14px;">
                     <div style="font-size:12px;color:#999;margin-bottom:4px;">题目</div>
-                    <div style="font-size:17px;font-weight:700;color:var(--text);">${item.title}</div>
+                    <div style="font-size:17px;font-weight:700;color:var(--text);">${escapeHtml(item.title)}</div>
                 </div>
                 <div style="margin-bottom:14px;">
                     <div style="font-size:12px;color:#999;margin-bottom:4px;">释义 / 内容</div>
-                    <div style="font-size:14px;line-height:1.7;color:#424242;white-space:pre-wrap;background:#FAFAFA;padding:12px;border-radius:10px;">${item.content}</div>
+                    <div style="font-size:14px;line-height:1.7;color:#424242;background:#FAFAFA;padding:12px;border-radius:10px;">${renderAiHtml(item.content || '')}</div>
                 </div>
                 ${item.notes ? `<div style="margin-bottom:14px;">
                     <div style="font-size:12px;color:#999;margin-bottom:4px;">备注</div>
-                    <div style="font-size:13px;line-height:1.7;color:#616161;white-space:pre-wrap;background:#FFF8E1;padding:12px;border-radius:10px;">${item.notes}</div>
+                    <div style="font-size:13px;line-height:1.7;color:#616161;background:#FFF8E1;padding:12px;border-radius:10px;">${renderAiHtml(item.notes)}</div>
                 </div>` : ''}
                 <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:#999;">
                     <span><span class="btn-icon-inline"><span class="icon" style="width:12px;height:12px;"><svg><use href="#icon-clock"/></svg></span> ${intervalText}</span></span>
@@ -3726,19 +3845,19 @@
 
             // 显示问题
             document.getElementById('reviewQuestion').textContent = item.title;
-            // 保留原始换行格式（配合 CSS white-space: pre-wrap）
-            document.getElementById('reviewAnswer').textContent = item.content;
+            // 答案按块渲染：段落、列表、公式（KaTeX 排版）
+            document.getElementById('reviewAnswer').innerHTML = renderAiHtml(item.content || '');
 
             // 加载备注
             const notesEl = document.getElementById('reviewNotes');
             if (item.notes && item.notes.trim()) {
-                notesEl.textContent = item.notes;
+                notesEl.innerHTML = renderAiHtml(item.notes);
                 notesEl.style.display = 'none';
                 notesEl.classList.remove('show');
                 document.getElementById('showNotesBtn').style.display = 'inline-flex';
                 document.getElementById('showNotesBtn').textContent = '显示备注';
             } else {
-                notesEl.textContent = '';
+                notesEl.innerHTML = '';
                 notesEl.style.display = 'none';
                 document.getElementById('showNotesBtn').style.display = 'none';
             }
@@ -4096,7 +4215,7 @@
             const container = document.getElementById('categoryListContainer');
 
             container.innerHTML = cats.map(cat => {
-                const isBuiltin = ['poem','word','idiom'].includes(cat.id);
+                const isBuiltin = BUILTIN_CATEGORY_IDS.includes(cat.id);
                 return `
                 <div class="manage-item" data-cat-id="${cat.id}" style="cursor:default;">
                     <div class="manage-item-header">
@@ -4342,6 +4461,10 @@
         let _aiCurrentTarget = '';
         // 每个目标一个打字机实例，停止生成时用来立刻收尾
         const _aiTypers = {};
+        // 记录每个目标「原始生成文本」，填入/复制时按它还原，避免与预览不一致
+        const _aiRawText = {};
+        // 记录生成时对应的题目，避免换了题目还拿上一条的生成结果当参考
+        const _aiRawTitle = {};
 
         // 构建AI提示词
         function buildAiPrompt(target) {
@@ -4357,13 +4480,36 @@
 
                 // 古诗词特殊处理：优先生成诗词原文内容
                 if (catId === 'poem') {
-                    prompt = `你是一个专业的古诗词知识助手。请为"${title}"这首诗/词生成完整的原文内容。
+                    prompt = `你是一个专业的古诗词知识助手。请为"${title}"这首诗/词输出完整的原文。
 
 要求：
 1. 直接输出该诗/词的完整原文，包含标题、作者、朝代和正文
 2. 正文按原格式分行排列，标点正确
 3. 如果有多首同名作品，选择最著名的那首
-4. 只输出原文，不要添加任何解释、翻译或赏析
+4. 只输出原文，不要添加任何解释、翻译、赏析或分点说明
+${existingContent ? '\n参考信息（可能不完整，请据此补全校正）：\n' + existingContent : ''}
+
+注意：无论有没有参考信息，本次都只输出完整原文，不要改写成释义、翻译或赏析。`;
+                } else if (catId === 'formula') {
+                    prompt = `你是一个理科（数学/物理/化学）知识整理助手。请为"${title}"这个公式或定理生成便于记忆的内容。
+
+要求：
+1. 第一行写出公式表达式，用普通文本书写（例如 Ek=1/2mv^2、F=ma、H2O），不要用 LaTeX 源码（不要写 \\frac、\\sqrt 这类命令）
+2. 逐项说明符号含义与单位
+3. 说明适用条件、常见变形
+4. 给一个简短的典型应用或例题
+5. 直接输出，不要加任何前缀说明
+
+${existingContent ? '\n补充参考信息：' + existingContent : ''}
+${existingContent ? '\n请在以上基础上进行补充和优化：' : ''}`;
+                } else if (catId === 'quote') {
+                    prompt = `你是一个文史知识助手。请为"${title}"这句名言/名句生成便于记忆的内容。
+
+要求：
+1. 先把完整原文写出来，并注明作者与出处
+2. 用一两句话给出白话释义
+3. 指出适用场景或表达的情感
+4. 直接输出，不要加任何前缀说明
 
 ${existingContent ? '\n补充参考信息：' + existingContent : ''}
 ${existingContent ? '\n请在以上基础上进行补充和优化：' : ''}`;
@@ -4384,7 +4530,7 @@ ${existingContent ? '\n请在以上基础上进行补充和优化：' : ''}`;
                 const catId = document.getElementById('categorySelect').value;
                 // 古诗词备注：生成赏析、背景等
                 if (catId === 'poem') {
-                    const contentVal = document.getElementById('contentInput').value.trim();
+                    const contentVal = currentContentForNotes();
                     prompt = `你是一个专业的古诗词鉴赏助手。请为"${title}"这首诗/词生成实用的学习备注。
 ${contentVal ? '\n该诗词的原文内容是：\n' + contentVal : ''}
 
@@ -4396,24 +4542,39 @@ ${contentVal ? '\n该诗词的原文内容是：\n' + contentVal : ''}
 5. 提供便于记忆的关键点或记忆口诀
 6. 直接输出备注内容，格式清晰，不要加任何前缀`;
                 } else {
-                    const contentVal = document.getElementById('contentInput').value.trim();
+                    const contentVal = currentContentForNotes();
                     prompt = `你是一个专业的知识整理助手。请为"${title}"这个条目生成实用的备注、扩展知识或例句。
-${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
+${contentVal ? '\n该条目当前的内容是：\n' + contentVal : ''}
 
 要求：
-1. 提供实用的记忆技巧、关联知识或易混淆点辨析
-2. 给出1-2个经典例句（如适用）
-3. 补充相关的文化背景或趣味知识点
-4. 直接输出备注内容，不要加任何前缀`;
+1. ${contentVal ? '备注必须紧扣上面给出的内容展开' : '先围绕题目给出核心含义'}，不要脱离内容泛泛而谈
+2. 提供实用的记忆技巧、关联知识或易混淆点辨析
+3. 给出1-2个经典例句（如适用）
+4. 补充相关的文化背景或趣味知识点
+5. 直接输出备注内容，不要加任何前缀`;
                 }
             }
             return prompt;
+        }
+
+        // 生成备注时的「当前内容」：优先取输入框；还没点「填入」时用刚生成的释义（且题目要对得上）
+        function currentContentForNotes() {
+            const typed = (document.getElementById('contentInput').value || '').trim();
+            if (typed) return typed;
+            const raw = (_aiRawText.content || '').trim();
+            if (!raw) return '';
+            const nowTitle = (document.getElementById('titleInput').value || '').trim();
+            if ((_aiRawTitle.content || '') !== nowTitle) return '';
+            return raw;
         }
 
         // 主入口：触发AI生成
         async function aiGenerate(target) {
             const prompt = buildAiPrompt(target);
             if (!prompt) return;
+
+            // 记下这次生成对应的题目（备注生成时用来判断参考内容是否属于同一题）
+            _aiRawTitle[target] = (document.getElementById('titleInput').value || '').trim();
 
             if (!refreshAiConfig().apiKey) {
                 showToast('请先在「设置」中填写 AI 的 API Key');
@@ -4457,6 +4618,7 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
             btn.classList.add('generating');
             btn.innerHTML = '<span class="btn-icon-inline"><span class="icon" style="color:white;width:14px;height:14px;"><svg><use href="#icon-square"/></svg></span> 停止生成</span>';
             bodyEl.innerHTML = '';
+            _aiRawText[target] = '';
             outputArea.classList.add('visible');
             statusEl.textContent = 'AI 正在思考...';
 
@@ -4469,6 +4631,7 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
                     if (!controller || controller.signal.aborted) return;
 
                     typer.setFull(text);
+                    _aiRawText[target] = text;
 
                     if (!isDone) {
                         statusEl.textContent = 'AI 正在生成中...';
@@ -4771,9 +4934,375 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
             return s;
         }
 
+        // 列表行识别：允许编号后不带空格（如「1.床前明月光」），也认中文顿号「1、」，
+        // 但用 (?![0-9]) 挡住「1.5 倍」「1.2.3」这类小数/版本号
+        const AI_OL_RE = /^[ \t]{0,4}\d+[.)、．](?![0-9])[ \t]*/;
+        const AI_UL_RE = /^[ \t]{0,4}[-*+][ \t]+/;
+
+        // ===== 平铺公式 → LaTeX =====
+        // AI 常把公式写成 1/2mv^2、v=s/t、H2O、a2+b2=c2 这种平铺文本，
+        // 这里把它们转成 LaTeX，再交给内置 KaTeX 排成教材式书面公式。
+        // 只转换「明显是公式」的片段，普通中文/英文句子不动。
+
+        const AI_ELEMENTS = new Set(('H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn ' +
+            'Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce Pr Nd Pm Sm Eu Gd Tb Dy Ho Er Tm Yb Lu ' +
+            'Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi Po At Rn Fr Ra Ac Th Pa U Np Pu Am Cm Bk Cf Es Fm Md No Lr').split(' '));
+
+        // 这些「看起来像元素组合」的缩写不能当化学式
+        const AI_CHEM_SKIP = new Set(('USB URL URI HTML CSS CPU GPU RAM ROM SSD HDD LED LCD PVC ABS APP API JSON PDF HTTP HTTPS ' +
+            'SQL UDP TCP SMS GPS WIFI DVD MP3 MP4 SIM OK ID PC TV CN US UK EU AU IN NO').split(' '));
+
+        // 单元素分子（只有一个元素 + 数字）需要白名单，避免把 B2、C60 之类误判
+        const AI_SIMPLE_MOLECULES = new Set(['H2', 'N2', 'O2', 'F2', 'Cl2', 'Br2', 'I2', 'O3', 'P4', 'S8']);
+
+        // H2O、CO2、H2SO4、Ca(OH)2 这类分子式 → \mathrm{...}（元素正体 + 数字下标）
+        // opts.allowNoDigit：方程式里允许 HCl / NaOH 这种不带数字的式子
+        function aiChemToLatex(token, opts) {
+            const allowNoDigit = !!(opts && opts.allowNoDigit);
+            if (!token || token.length < 2) return null;
+            if (AI_CHEM_SKIP.has(token.replace(/\d+/g, ''))) return null;
+
+            let i = 0;
+            let elements = 0;
+            let digits = 0;
+            const parts = [];
+
+            const readGroup = (inner) => {
+                const tokens = inner.match(/[A-Z][a-z]?\d*/g) || [];
+                if (!tokens.length || tokens.join('') !== inner) return null;
+                let latex = '';
+                for (const t of tokens) {
+                    const m = t.match(/^([A-Z][a-z]?)(\d*)$/);
+                    if (!m || !AI_ELEMENTS.has(m[1])) return null;
+                    elements++;
+                    if (m[2]) {
+                        digits++;
+                        latex += '\\mathrm{' + m[1] + '}_{' + m[2] + '}';
+                    } else {
+                        latex += '\\mathrm{' + m[1] + '}';
+                    }
+                }
+                return latex;
+            };
+
+            while (i < token.length) {
+                const ch = token[i];
+                if (ch === '(') {
+                    const close = token.indexOf(')', i);
+                    if (close < 0) return null;
+                    const innerLatex = readGroup(token.slice(i + 1, close));
+                    if (innerLatex == null) return null;
+                    let num = '';
+                    let k = close + 1;
+                    while (/\d/.test(token[k] || '')) { num += token[k]; k++; }
+                    if (num) digits++;
+                    parts.push('(' + innerLatex + ')' + (num ? '_{' + num + '}' : ''));
+                    i = k;
+                    continue;
+                }
+                if (/[A-Z]/.test(ch)) {
+                    let sym = ch;
+                    let k = i + 1;
+                    if (/[a-z]/.test(token[k] || '')) { sym += token[k]; k++; }
+                    if (!AI_ELEMENTS.has(sym)) return null;
+                    elements++;
+                    let num = '';
+                    while (/\d/.test(token[k] || '')) { num += token[k]; k++; }
+                    if (num) digits++;
+                    parts.push('\\mathrm{' + sym + '}' + (num ? '_{' + num + '}' : ''));
+                    i = k;
+                    continue;
+                }
+                return null;
+            }
+
+            // 至少两个元素（或常见的单元素分子）且带数字，才认为是化学式，避免误伤英文单词
+            if (elements < 2) {
+                if (!AI_SIMPLE_MOLECULES.has(token)) return null;
+            } else if (digits < 1 && !allowNoDigit) {
+                return null;
+            }
+            return parts.join('');
+        }
+
+        // 化学方程式里的单项：2H2O2、H2O、O2↑（含系数与 ↑↓）
+        function aiChemTermToLatex(term) {
+            let t = String(term).trim();
+            if (!t) return null;
+            let suffix = '';
+            const arrow = t.match(/[↑↓]$/);
+            if (arrow) {
+                suffix = arrow[0] === '↑' ? '\\uparrow' : '\\downarrow';
+                t = t.slice(0, -1).trim();
+            }
+            const m = t.match(/^(\d+)?\s*(.+)$/);
+            if (!m) return null;
+            const latex = aiChemToLatex((m[2] || '').trim(), { allowNoDigit: true });
+            if (!latex) return null;
+            return (m[1] || '') + latex + suffix;
+        }
+
+        // 化学方程式：2H2O2 = 2H2O + O2↑ （允许空格，逐项都是化学式才转）
+        function aiChemEquationToLatex(span) {
+            const raw = String(span).trim();
+            if (!/[=→]/.test(raw)) return null;
+            const terms = [];
+            const seps = [];
+            let buf = '';
+            for (const ch of raw) {
+                if (ch === '=' || ch === '→' || ch === '+') { terms.push(buf); seps.push(ch); buf = ''; }
+                else buf += ch;
+            }
+            terms.push(buf);
+            if (seps.length < 1 || terms.length < 2) return null;
+
+            const out = [];
+            for (let idx = 0; idx < terms.length; idx++) {
+                const item = aiChemTermToLatex(terms[idx]);
+                if (item == null) return null;
+                out.push(item);
+                if (idx < seps.length) {
+                    out.push(seps[idx] === '+' ? ' + ' : seps[idx] === '=' ? ' = ' : ' \\rightarrow ');
+                }
+            }
+            return out.join('');
+        }
+
+        // 常用单位（公式里的单位排成正体）
+        const AI_UNITS = new Set(('kg g mg t km m cm mm nm s ms min h N J kJ W kW V mV A mA Pa kPa MPa Hz kHz mol K ℃ Ω C F T Wb lm lx cd rad dB').split(' '));
+
+        // 带空格的算式：m1 = 5.98×10^24 kg、F=1.98×10^20 N
+        // 只有「每个词都像公式成分」时才转，普通英文句子会整段放弃
+        function aiSpacedFormulaToLatex(span) {
+            const raw = String(span).trim();
+            if (!/=/.test(raw)) return null;
+            // 把等号两侧归一成独立 token（"G=6.67×10^-11" → "G" "=" "6.67×10^-11"）
+            const tokens = raw.replace(/\s*=\s*/g, ' = ').split(/\s+/).filter(Boolean);
+            if (tokens.length < 3) return null;
+
+            const units = [];
+            const putUnit = (latex) => { units.push(latex); return '\uE200' + (units.length - 1) + '\uE201'; };
+            const parts = [];
+
+            for (let i = 0; i < tokens.length; i++) {
+                const tk = tokens[i];
+                const prev = tokens[i - 1] || '';
+                const prevNumeric = /[\d)]$/.test(prev);
+
+                if (/^(=|\+|-|×|\*|\/|÷)$/.test(tk)) { parts.push(tk); continue; }
+                if (/^[-+]?\d+(?:\.\d+)?(?:[×*]?10\^[-+]?\d+)?$/.test(tk)) { parts.push(tk); continue; }
+
+                // 数字直接带单位：6N、25℃
+                const withUnit = tk.match(/^([-+]?\d+(?:\.\d+)?(?:[×*]?10\^[-+]?\d+)?)([A-Za-z℃Ω]{1,4})$/);
+                if (withUnit && AI_UNITS.has(withUnit[2])) {
+                    parts.push(withUnit[1] + putUnit('\\mathrm{' + withUnit[2] + '}'));
+                    continue;
+                }
+
+                // 复合单位（多段）：N·m^2/kg^2、m/s^2、kg·m/s
+                if (/[\/·]/.test(tk) && /^[A-Za-z℃Ω0-9^\/·]+$/.test(tk)) {
+                    const segs = tk.split(/([\/·])/);
+                    let ok = true;
+                    let acc = '';
+                    for (const sg of segs) {
+                        if (sg === '/') { acc += '/'; continue; }
+                        if (sg === '·') { acc += '\\cdot '; continue; }
+                        const sm = sg.match(/^([A-Za-z℃Ω]+)(?:\^([-+]?\d+))?$/);
+                        if (!sm || !AI_UNITS.has(sm[1])) { ok = false; break; }
+                        acc += '\\mathrm{' + sm[1] + '}' + (sm[2] ? '^{' + sm[2] + '}' : '');
+                    }
+                    if (ok && acc) { parts.push(putUnit(acc)); continue; }
+                }
+
+                // 复合单位：m/s^2、km/h
+                const unitExpr = tk.match(/^([A-Za-z℃Ω]+)(?:\/([A-Za-z℃Ω]+))?(?:\^([-+]?\d+))?$/);
+                if (unitExpr && AI_UNITS.has(unitExpr[1]) && (!unitExpr[2] || AI_UNITS.has(unitExpr[2])) &&
+                    (unitExpr[2] || unitExpr[3] || unitExpr[1].length >= 2)) {
+                    parts.push(putUnit('\\mathrm{' + unitExpr[1] + (unitExpr[2] ? '/' + unitExpr[2] : '') + '}' +
+                        (unitExpr[3] ? '^{' + unitExpr[3] + '}' : '')));
+                    continue;
+                }
+
+                // 单字母（变量斜体）；紧跟在数字后面的单字母单位（如 6 N）排正体
+                if (/^[A-Za-z]$/.test(tk)) {
+                    if (prevNumeric && AI_UNITS.has(tk)) { parts.push(putUnit('\\mathrm{' + tk + '}')); continue; }
+                    parts.push(tk);
+                    continue;
+                }
+
+                // 多字母单位：kg、mol、Hz
+                if (AI_UNITS.has(tk)) { parts.push(putUnit('\\mathrm{' + tk + '}')); continue; }
+
+                // 变量：m1、E_k、v0
+                if (/^[A-Za-z]\d+$/.test(tk) || /^[A-Za-z]_[A-Za-z0-9]+$/.test(tk)) { parts.push(tk); continue; }
+
+                return null;
+            }
+
+            let latex = aiFormulaLatex(parts.join(''));
+            if (!latex) return null;
+            latex = latex.replace(/\uE200(\d+)\uE201/g, (m, idx) => units[Number(idx)] || '');
+            return latex;
+        }
+
+        // 等式/算式片段 → LaTeX（分数、根号、上下标、乘除号）
+        function aiFormulaLatex(run) {
+            let s = String(run);
+
+            // Unicode 上标 → ^
+            s = s.replace(/²/g, '^2').replace(/³/g, '^3').replace(/¹/g, '^1');
+
+            // 多位/负数上下标要补花括号：10^-11 → 10^{-11}，否则只有负号被当成上标
+            s = s.replace(/\^(-?\d+(?:\.\d+)?)/g, '^{$1}');
+            s = s.replace(/\^([A-Za-z])/g, '^{$1}');
+            s = s.replace(/\^(-)/g, '^{-}');
+            s = s.replace(/_(\d+)/g, '_{$1}');
+
+            // 根号：√(a+b) / √3 / √x
+            s = s.replace(/√\s*\(([^()]*)\)/g, '\\sqrt{$1}');
+            s = s.replace(/√\s*([A-Za-z0-9.]+)/g, '\\sqrt{$1}');
+
+            // 乘除号（AI 常用 * 表示乘）
+            s = s.replace(/×/g, '\\times ');
+            s = s.replace(/÷/g, '\\div ');
+            s = s.replace(/·/g, '\\cdot ');
+            s = s.replace(/\*/g, '\\times ');
+
+            // 三角函数 / 对数等函数名（cosφ 里的 cos 也要排成正体）
+            s = s.replace(/\b(cos|sin|tan|cot|sec|csc|log|ln|lg|exp|max|min)\b/g, '\\$1 ');
+
+            // 希腊字母与常用符号
+            const greek = {
+                'α': '\\alpha ', 'β': '\\beta ', 'γ': '\\gamma ', 'δ': '\\delta ', 'θ': '\\theta ',
+                'λ': '\\lambda ', 'μ': '\\mu ', 'π': '\\pi ', 'ρ': '\\rho ', 'σ': '\\sigma ',
+                'τ': '\\tau ', 'φ': '\\varphi ', 'ω': '\\omega ', 'Δ': '\\Delta ', 'Φ': '\\Phi ',
+                'Ω': '\\Omega ', 'Σ': '\\Sigma '
+            };
+            s = s.replace(/[αβγδθλμπρστφωΔΦΩΣ]/g, (ch) => greek[ch] || ch);
+
+            // 分数：数字/数字、括号/括号、字母/括号、括号/字母、单字母/单字母
+            const fracPatterns = [
+                /(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)/g,
+                /\(([^()]*)\)\s*\/\s*\(([^()]*)\)/g,
+                /([A-Za-z]+)\s*\/\s*\(([^()]*)\)/g,
+                /\(([^()]*)\)\s*\/\s*([A-Za-z]+)/g,
+                /(^|[=+\-(\s])([A-Za-z])\s*\/\s*([A-Za-z])(?![A-Za-z])/g
+            ];
+            for (let round = 0; round < 3; round++) {
+                const before = s;
+                s = s.replace(fracPatterns[0], (m, a, b) => '\\frac{' + a + '}{' + b + '}');
+                s = s.replace(fracPatterns[1], (m, a, b) => '\\frac{' + a + '}{' + b + '}');
+                s = s.replace(fracPatterns[2], (m, a, b) => '\\frac{' + a + '}{' + b + '}');
+                s = s.replace(fracPatterns[3], (m, a, b) => '\\frac{' + a + '}{' + b + '}');
+                s = s.replace(fracPatterns[4], (m, pre, a, b) => pre + '\\frac{' + a + '}{' + b + '}');
+                if (s === before) break;
+            }
+
+            // 字母后的数字：a2+b2=c2 这类全部同指数 → 上标；v1+v2 这类 → 下标
+            const pairs = s.match(/[A-Za-z]\d+/g) || [];
+            if (pairs.length) {
+                const digits = new Set(pairs.map(p => p.slice(1)));
+                const asPower = pairs.length >= 2 && digits.size === 1 && /[+=]/.test(s);
+                s = s.replace(/([A-Za-z])(\d+)/g, (m, letter, num) =>
+                    letter + (asPower ? '^{' + num + '}' : '_{' + num + '}'));
+            }
+
+            return s;
+        }
+
+        // 单行内的转换：先保护代码、已有公式、链接，再逐段转换
+        function aiFormatFormulaLine(line) {
+            // 整行只有一个公式时按「独立公式」排版（居中、大号），更像教材
+            const whole = String(line).trim().replace(/[，。；、,.;:：]+$/, '');
+            if (whole && /[=√]/.test(whole) && !/[\u3400-\u9fff]/.test(whole) &&
+                /^[A-Za-z0-9().+\-^_=√²³¹×÷·\/πθαβγδλμρστφωΩΔΦΣ]+$/.test(whole)) {
+                try {
+                    return '$$' + aiFormulaLatex(whole) + '$$';
+                } catch (e) {
+                    // 出错就按普通行处理
+                }
+            }
+
+            const stash = [];
+            const keep = (html) => {
+                stash.push(html);
+                return '\uE100' + (stash.length - 1) + '\uE101';
+            };
+
+            let s = String(line);
+            // 已有公式与行内代码、链接整段保护
+            s = s.replace(/(\$\$[\s\S]*?\$\$|\$[^$\n]+\$|\\\([\s\S]*?\\\)|\\\[[\s\S]*?\\\])/g, keep);
+            s = s.replace(/`[^`\n]+`/g, keep);
+            s = s.replace(/!\[[^\]\n]*\]\([^)\s]*\)/g, keep);
+            s = s.replace(/\[[^\]\n]+\]\([^)\s]*\)/g, keep);
+
+            // 化学方程式（2H2O2 = 2H2O + O2↑）：带空格的整段，先于单元格化学式处理
+            s = s.replace(/[0-9A-Za-z().↑↓+\-=\s]{3,}/g, (span) => {
+                if (!/[=→]/.test(span)) return span;
+                const latex = aiChemEquationToLatex(span);
+                return latex ? keep('$' + latex + '$') : span;
+            });
+
+            // 带空格的算式（m1 = 5.98×10^24 kg、F = 1.98×10^20 N）
+            s = s.replace(/[A-Za-z0-9().+\-^_=√²³¹×÷·*\/↑↓ ]{3,}/g, (span) => {
+                if (!/=/.test(span)) return span;
+                const latex = aiSpacedFormulaToLatex(span);
+                return latex ? keep('$' + latex + '$') : span;
+            });
+
+            // 化学式（H2O / CO2 / H2SO4 / Ca(OH)2）
+            s = s.replace(/\b((?:[A-Z][a-z]?\d*|\((?:[A-Z][a-z]?\d*)+\)\d*){2,})\b/g, (m, token) => {
+                const latex = aiChemToLatex(token);
+                return latex ? keep('$' + latex + '$') : m;
+            });
+
+            // 离子（Fe3+ / Cl- / Na+ / OH-）
+            s = s.replace(/\b((?:[A-Z][a-z]?)+)(\d*)([+-])(?![A-Za-z0-9])/g, (m, base, num, sign) => {
+                const syms = base.match(/[A-Z][a-z]?/g) || [];
+                if (!syms.length || syms.some(x => !AI_ELEMENTS.has(x))) return m;
+                const sup = (num ? num : '') + sign;
+                return keep('$\\mathrm{' + base + '}^{' + sup + '}$');
+            });
+
+            // 等式/算式片段：连续数学字符，含 = 或 √，或本身就是 a/b 形式的分数
+            s = s.replace(/[A-Za-z0-9().+\-^_=√²³¹×÷·*\/πθαβγδλμρστφωΩΔΦΣ]+/g, (run) => {
+                if (run.length < 2) return run;
+                if (/:\/\//.test(run)) return run;
+                const hasEq = /=/.test(run);
+                const hasSqrt = /√/.test(run);
+                // 纯 a/b 也排成分数，但「m/s」这种单位保持原样（要求带数字或上下标）
+                const pureFrac = /^[A-Za-z0-9.^_()]+\/[A-Za-z0-9.^_()]+$/.test(run) &&
+                    /[A-Za-z]/.test(run) && /[\d^_]/.test(run);
+                if (!hasEq && !hasSqrt && !pureFrac) return run;
+
+                const latex = aiFormulaLatex(run);
+                if (!latex) return run;
+                return keep('$' + latex + '$');
+            });
+
+            s = s.replace(/\uE100(\d+)\uE101/g, (m, idx) => stash[Number(idx)] || '');
+            return s;
+        }
+
+        // 逐行转换（跳过 ``` 代码块）
+        function autoFormatFormulas(text) {
+            const lines = String(text == null ? '' : text).split('\n');
+            let inFence = false;
+            const out = lines.map(line => {
+                if (/^[ \t]*```/.test(line)) { inFence = !inFence; return line; }
+                if (inFence || !line.trim()) return line;
+                try {
+                    return aiFormatFormulaLine(line);
+                } catch (e) {
+                    return line;
+                }
+            });
+            return out.join('\n');
+        }
+
         // 整段渲染：按块识别代码块、公式块、表格、列表、标题、引用，其余作为段落
         function renderAiHtml(raw) {
-            const text = decodeAiEscapes(raw);
+            const text = autoFormatFormulas(decodeAiEscapes(raw));
             const lines = text.split('\n');
             const out = [];
             let i = 0;
@@ -4899,15 +5428,32 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
                 }
 
                 // 有序 / 无序列表
-                if (/^[ \t]{0,4}([-*+]|\d+[.)])[ \t]+/.test(line)) {
-                    const ordered = /^[ \t]{0,4}\d+[.)][ \t]+/.test(line);
+                // 同一个列表的项之间常被空行隔开，这里允许跨空行继续收集，
+                // 否则每一行都会单独成一个 <ol>，界面上全是「1.」（编号反复从 1 开始）
+                if (AI_OL_RE.test(line) || AI_UL_RE.test(line)) {
+                    const ordered = AI_OL_RE.test(line);
+                    const itemRe = ordered ? AI_OL_RE : AI_UL_RE;
+                    const startMatch = ordered ? line.match(/^[ \t]{0,4}(\d+)/) : null;
+                    const startNum = startMatch ? (parseInt(startMatch[1], 10) || 1) : 1;
                     const items = [];
-                    while (i < lines.length && /^[ \t]{0,4}([-*+]|\d+[.)])[ \t]+/.test(lines[i])) {
-                        items.push(lines[i].replace(/^[ \t]{0,4}([-*+]|\d+[.)])[ \t]+/, ''));
-                        i++;
+                    while (i < lines.length) {
+                        const cur = lines[i];
+                        if (itemRe.test(cur)) {
+                            items.push(cur.replace(itemRe, ''));
+                            i++;
+                            continue;
+                        }
+                        // 中间夹空行：后面仍是同类列表项就继续这一组
+                        if (!cur.trim()) {
+                            let k = i + 1;
+                            while (k < lines.length && !lines[k].trim()) k++;
+                            if (k < lines.length && itemRe.test(lines[k])) { i = k; continue; }
+                        }
+                        break;
                     }
                     const tag = ordered ? 'ol' : 'ul';
-                    out.push('<' + tag + ' class="ai-md-' + tag + '">' +
+                    out.push('<' + tag + ' class="ai-md-' + tag + '"' +
+                        (ordered && startNum > 1 ? ' start="' + startNum + '"' : '') + '>' +
                         items.map(item => '<li>' + renderAiInline(item) + '</li>').join('') +
                         '</' + tag + '>');
                     continue;
@@ -4922,7 +5468,7 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
                     const cur = lines[i];
                     if (!cur.trim()) break;
                     if (/^[ \t]{0,3}(#{1,6}[ \t]|>|```)/.test(cur)) break;
-                    if (/^[ \t]{0,4}([-*+]|\d+[.)])[ \t]+/.test(cur)) break;
+                    if (AI_OL_RE.test(cur) || AI_UL_RE.test(cur)) break;
                     if (/^[ \t]{0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/.test(cur)) break;
                     if (cur.trim().startsWith('$$')) break;
                     if (cur.indexOf('|') >= 0 && i + 1 < lines.length && aiIsTableSeparator(lines[i + 1])) break;
@@ -4930,13 +5476,96 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
                     i++;
                 }
                 if (buf.length) {
-                    out.push('<div class="ai-md-p">' + renderAiInline(buf.join('\n')) + '</div>');
+                    const plainLen = buf.join('').replace(/\s+/g, '').length;
+                    const cls = 'ai-md-p' + (plainLen >= 30 ? ' ai-md-indent' : '');
+                    out.push('<div class="' + cls + '">' + renderAiInline(buf.join('\n')) + '</div>');
                 } else {
                     i++;
                 }
             }
 
             return out.join('');
+        }
+
+        // 行内 markdown 符号转纯文本（与预览看到的效果一致：去掉 ** ` [](), 保留 $公式$）
+        function aiPlainInline(text) {
+            let s = String(text || '');
+            s = s.replace(/!\[([^\]\n]*)\]\([^)\s]*\)/g, '$1');
+            s = s.replace(/\[([^\]\n]+)\]\([^)\s]*\)/g, '$1');
+            s = s.replace(/`([^`\n]+)`/g, '$1');
+            s = s.replace(/\*\*\*([^*\n]+)\*\*\*/g, '$1');
+            s = s.replace(/\*\*([^*\n]+)\*\*/g, '$1');
+            s = s.replace(/__([^_\n]+)__/g, '$1');
+            s = s.replace(/~~([^~\n]+)~~/g, '$1');
+            return s.replace(/\s+$/, '');
+        }
+
+        // 把 AI 原始输出整理成「与预览一致」的纯文本：
+        // 有序列表统一重新编号为 1. 2. 3.（模型重复写「1.」或中间夹空行都不会错乱），
+        // 无序列表统一成「· 」，标题/引用去掉符号，段落逐行保留。
+        function aiOutputToPlainText(raw) {
+            const lines = decodeAiEscapes(raw).split('\n');
+            const out = [];
+            let i = 0;
+
+            while (i < lines.length) {
+                const line = lines[i];
+                const trimmed = line.trim();
+
+                // 代码块：去掉围栏，内容原样保留
+                if (/^```/.test(trimmed)) {
+                    let j = i + 1;
+                    while (j < lines.length && !/^```/.test(lines[j].trim())) {
+                        out.push(lines[j]);
+                        j++;
+                    }
+                    i = j + 1;
+                    continue;
+                }
+
+                if (!trimmed) { i++; continue; }
+
+                const heading = trimmed.match(/^[ \t]{0,3}#{1,6}[ \t]*(.*)$/);
+                if (heading) {
+                    out.push(aiPlainInline(heading[1]));
+                    i++;
+                    continue;
+                }
+
+                if (AI_OL_RE.test(line) || AI_UL_RE.test(line)) {
+                    let n = 0;
+                    while (i < lines.length) {
+                        const cur = lines[i];
+                        if (AI_OL_RE.test(cur)) {
+                            n++;
+                            out.push(n + '. ' + aiPlainInline(cur.replace(AI_OL_RE, '')));
+                            i++;
+                            continue;
+                        }
+                        if (AI_UL_RE.test(cur)) {
+                            out.push('· ' + aiPlainInline(cur.replace(AI_UL_RE, '')));
+                            i++;
+                            continue;
+                        }
+                        // 项之间夹空行：后面还是列表项就继续同一组
+                        if (!cur.trim()) {
+                            let k = i + 1;
+                            while (k < lines.length && !lines[k].trim()) k++;
+                            if (k < lines.length && (AI_OL_RE.test(lines[k]) || AI_UL_RE.test(lines[k]))) {
+                                i = k;
+                                continue;
+                            }
+                        }
+                        break;
+                    }
+                    continue;
+                }
+
+                out.push(aiPlainInline(trimmed.replace(/^[ \t]{0,3}>[ \t]?/, '')));
+                i++;
+            }
+
+            return out.join('\n').trim();
         }
 
         // SSE 增量解析：把分片文本拼成帧，逐帧取 delta 回调 onChunk(全文, 是否结束)
@@ -5165,8 +5794,7 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
             document.getElementById('aiConfigStatus').textContent = '';
             renderAiCurrentText();
 
-            const repoInput = document.getElementById('githubRepoInput');
-            if (repoInput) repoInput.value = getGithubRepo();
+            applyUpdateSettingsUI();
             renderAppVersion();
             autoCheckUpdate();
         }
@@ -5248,16 +5876,117 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
             }
         }
 
-        // ========== 设置页：软件更新（GitHub Releases） ==========
+        // ========== 设置页：软件更新（Gitee / GitHub Releases） ==========
         // 与 android/app/build.gradle 的 versionName 保持一致（网页版无法读原生版本时用它）
-        const APP_VERSION_FALLBACK = '1.3.0';
-        const GITHUB_REPO_KEY = 'memory_github_repo';
-        // 内置发布地址：进设置页会自动从这里检查更新，无需手动配置
-        const DEFAULT_GITHUB_REPO = 'yfcybj/memory-app';
+        const APP_VERSION_FALLBACK = '1.3.5';
+        const UPDATE_PLATFORM_KEY = 'memory_update_platform';
+        // 各平台分别记住自己的仓库，切换平台时不会互相覆盖
+        const UPDATE_REPO_KEYS = { gitee: 'memory_gitee_repo', github: 'memory_github_repo' };
+        const UPDATE_PLATFORMS = {
+            gitee: {
+                label: 'Gitee',
+                api: 'https://gitee.com/api/v5/repos/',
+                defaultRepo: 'ycxqs/memory-app'
+            },
+            github: {
+                label: 'GitHub',
+                api: 'https://api.github.com/repos/',
+                defaultRepo: 'yfcybj/memory-app'
+            }
+        };
+        const DEFAULT_UPDATE_PLATFORM = 'gitee';
 
-        function getGithubRepo() {
-            const saved = (localStorage.getItem(GITHUB_REPO_KEY) || '').trim();
-            return /^[\w.-]+\/[\w.-]+$/.test(saved) ? saved : DEFAULT_GITHUB_REPO;
+        function getUpdatePlatform() {
+            const saved = (localStorage.getItem(UPDATE_PLATFORM_KEY) || '').trim().toLowerCase();
+            return UPDATE_PLATFORMS[saved] ? saved : DEFAULT_UPDATE_PLATFORM;
+        }
+
+        function getUpdateRepo(platform) {
+            const p = UPDATE_PLATFORMS[platform] ? platform : DEFAULT_UPDATE_PLATFORM;
+            const saved = (localStorage.getItem(UPDATE_REPO_KEYS[p]) || '').trim();
+            return /^[\w.-]+\/[\w.-]+$/.test(saved) ? saved : UPDATE_PLATFORMS[p].defaultRepo;
+        }
+
+        function updateRepoHint(platform) {
+            const hint = document.getElementById('updateRepoHint');
+            if (!hint) return;
+            hint.textContent = platform === 'gitee'
+                ? '在 Gitee 仓库创建 Release（tag 与版本号一致）并上传 .apk 附件即可自动更新。'
+                : '在 GitHub 仓库创建 Release（tag 与版本号一致）并上传 .apk 附件即可自动更新。';
+        }
+
+        // 把已保存的平台 / 仓库回填到设置页控件
+        function applyUpdateSettingsUI() {
+            const sel = document.getElementById('updatePlatformSelect');
+            const repoInput = document.getElementById('githubRepoInput');
+            const platform = getUpdatePlatform();
+            if (sel) sel.value = platform;
+            if (repoInput) repoInput.value = getUpdateRepo(platform);
+            updateRepoHint(platform);
+        }
+
+        // 切换平台：记住选择、把该平台自己的仓库填回输入框，并重新检查一次
+        function onUpdatePlatformChange() {
+            const sel = document.getElementById('updatePlatformSelect');
+            if (!sel) return;
+            const platform = UPDATE_PLATFORMS[sel.value] ? sel.value : DEFAULT_UPDATE_PLATFORM;
+            localStorage.setItem(UPDATE_PLATFORM_KEY, platform);
+
+            const repoInput = document.getElementById('githubRepoInput');
+            if (repoInput) repoInput.value = getUpdateRepo(platform);
+            updateRepoHint(platform);
+
+            const status = document.getElementById('updateStatus');
+            const actions = document.getElementById('updateActions');
+            if (status) status.textContent = '';
+            if (actions) {
+                actions.style.display = 'none';
+                actions.innerHTML = '';
+            }
+
+            // 手动切平台不算节流范围
+            window._lastUpdateCheck = 0;
+            checkAppUpdate({ silent: true });
+        }
+
+        // 拉取指定平台的最新 Release，统一成 { platform, tag, body, published, assets[] }
+        async function fetchLatestRelease(platform, repo) {
+            const conf = UPDATE_PLATFORMS[platform];
+            if (!conf) throw new Error('未知的更新平台');
+            const url = conf.api + repo + '/releases/latest';
+            const headers = platform === 'github'
+                ? { 'Accept': 'application/vnd.github+json' }
+                : { 'Accept': 'application/json' };
+
+            let resp;
+            try {
+                resp = await fetch(url, { headers: headers });
+            } catch (e) {
+                throw new Error('无法连接 ' + conf.label + '（网络错误）');
+            }
+
+            if (resp.status === 404) {
+                throw new Error(conf.label + ' 仓库不存在，或还没有发布 Release');
+            }
+            if (resp.status === 403 || resp.status === 429) {
+                throw new Error(conf.label + ' 接口访问受限（' + resp.status + '），请稍后再试');
+            }
+            if (!resp.ok) {
+                throw new Error(conf.label + ' 接口错误 ' + resp.status);
+            }
+
+            const data = await resp.json();
+            return {
+                platform: platform,
+                tag: data.tag_name || data.name || '',
+                body: data.body || data.description || '',
+                published: data.published_at || data.created_at || data.updated_at || '',
+                assets: (data.assets || []).map(a => ({
+                    name: a.name || '',
+                    url: a.browser_download_url || a.url || '',
+                    size: Number(a.size) || 0
+                }))
+            };
         }
 
         // 把 Release 说明里的 markdown 符号清掉，按纯文本展示
@@ -5359,48 +6088,71 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
             const status = document.getElementById('updateStatus');
             const actions = document.getElementById('updateActions');
             const btn = document.getElementById('btnCheckUpdate');
+            const platformSel = document.getElementById('updatePlatformSelect');
+            const platform = (platformSel && UPDATE_PLATFORMS[platformSel.value]) ? platformSel.value : getUpdatePlatform();
             const repoInput = document.getElementById('githubRepoInput');
-            const repo = ((repoInput && repoInput.value) || getGithubRepo()).trim();
+            const repo = ((repoInput && repoInput.value) || getUpdateRepo(platform)).trim();
 
             actions.style.display = 'none';
             actions.innerHTML = '';
 
             if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) {
-                status.textContent = '请先填写 GitHub 仓库，格式：用户名/仓库名';
+                status.textContent = '请先填写仓库，格式：用户名/仓库名';
                 return;
             }
-            localStorage.setItem(GITHUB_REPO_KEY, repo);
+            localStorage.setItem(UPDATE_PLATFORM_KEY, platform);
+            localStorage.setItem(UPDATE_REPO_KEYS[platform], repo);
             window._lastUpdateCheck = Date.now();
 
             const oldText = btn.textContent;
             btn.disabled = true;
             btn.textContent = '检查中…';
-            if (!silent) status.textContent = '正在检查更新…';
+            if (!silent) status.textContent = '正在从 ' + UPDATE_PLATFORMS[platform].label + ' 检查更新…';
 
             try {
-                const resp = await fetch('https://api.github.com/repos/' + repo + '/releases/latest', {
-                    headers: { 'Accept': 'application/vnd.github+json' }
-                });
-                if (resp.status === 404) throw new Error('仓库不存在，或还没有发布 Release');
-                if (resp.status === 403) throw new Error('GitHub 接口访问受限（403），请稍后再试');
-                if (!resp.ok) throw new Error('GitHub 接口错误 ' + resp.status);
+                let release = null;
+                let usedPlatform = platform;
+                let firstError = null;
 
-                const release = await resp.json();
-                const latest = normalizeVersion(release.tag_name || release.name || '');
+                try {
+                    release = await fetchLatestRelease(platform, repo);
+                } catch (e) {
+                    firstError = e;
+                }
+
+                // 当前平台还没有可用的 Release 时，自动换另一个平台再试（两个平台各自记自己的仓库）
+                if (!release) {
+                    const alt = platform === 'gitee' ? 'github' : 'gitee';
+                    try {
+                        release = await fetchLatestRelease(alt, getUpdateRepo(alt));
+                        usedPlatform = alt;
+                    } catch (e) {
+                        throw firstError || e;
+                    }
+                }
+
+                const latest = normalizeVersion(release.tag);
                 const current = await getCurrentVersion();
                 const currentVersion = normalizeVersion(current.versionName);
 
                 if (!latest) throw new Error('无法解析版本号');
 
+                const fromOther = usedPlatform !== platform
+                    ? '<div style="font-size:12px;color:var(--text-secondary);margin-top:6px;">'
+                      + escapeHtml(UPDATE_PLATFORMS[platform].label) + ' 暂无可用 Release，本次结果来自 '
+                      + escapeHtml(UPDATE_PLATFORMS[usedPlatform].label) + '</div>'
+                    : '';
+
                 if (compareVersion(latest, currentVersion) <= 0) {
                     status.innerHTML = '<span style="color:#2E7D32;">已是最新版本</span>'
-                        + '<span style="color:var(--text-secondary);"> · 当前 v' + escapeHtml(currentVersion) + '</span>';
+                        + '<span style="color:var(--text-secondary);"> · 当前 v' + escapeHtml(currentVersion) + '</span>'
+                        + fromOther;
                     return;
                 }
 
-                const apkAsset = (release.assets || []).find(a => /\.apk$/i.test(a.name || ''));
-                const sizeText = apkAsset ? (apkAsset.size / 1048576).toFixed(1) + ' MB' : '';
-                const published = release.published_at ? String(release.published_at).slice(0, 10) : '';
+                const apkAsset = (release.assets || []).find(a => /\.apk$/i.test(a.name || a.url || ''));
+                const sizeText = (apkAsset && apkAsset.size > 0) ? (apkAsset.size / 1048576).toFixed(1) + ' MB' : '';
+                const published = release.published ? String(release.published).slice(0, 10) : '';
 
                 let html = '<div style="background:#F1F8E9;border-radius:12px;padding:12px;">'
                     + '<div style="font-weight:600;color:#2E7D32;font-size:15px;">发现新版本 v' + escapeHtml(latest) + '</div>'
@@ -5427,7 +6179,7 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
                 actions.style.display = 'block';
                 actions.innerHTML = '<button class="btn btn-primary btn-block" id="btnDoUpdate">下载并安装 v' + escapeHtml(latest) + '</button>';
                 document.getElementById('btnDoUpdate').onclick = function () {
-                    startAppUpdate(apkAsset.browser_download_url, 'v' + latest);
+                    startAppUpdate(apkAsset.url, 'v' + latest);
                 };
             } catch (err) {
                 if (silent) {
@@ -5513,10 +6265,17 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
             if (target === 'content') updateAiButtonLabels();
         }
 
+        // 取 AI 输出文本：优先用「原始生成文本」整理，保证填入/复制的内容与预览一致
+        function aiOutputText(target, fallbackEl) {
+            const raw = _aiRawText[target];
+            if (raw && raw.trim()) return aiOutputToPlainText(raw);
+            return ((fallbackEl && fallbackEl.innerText) || '').trim();
+        }
+
         // 复制AI输出
         async function aiCopyOutput(target) {
             const bodyEl = document.getElementById('aiBody' + capitalizeFirst(target));
-            const text = bodyEl.innerText.trim();
+            const text = aiOutputText(target, bodyEl);
             if (!text) { showToast('没有可复制的内容'); return; }
             try {
                 await navigator.clipboard.writeText(text);
@@ -5529,10 +6288,11 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
         // 将AI输出填入对应输入框
         function aiApplyOutput(target) {
             const bodyEl = document.getElementById('aiBody' + capitalizeFirst(target));
-            const text = bodyEl.innerText.trim();
+            const text = aiOutputText(target, bodyEl);
             if (!text) { showToast('没有可填入的内容'); return; }
             const inputId = target === 'content' ? 'contentInput' : 'notesInput';
             document.getElementById(inputId).value = text;
+            refreshRichField(inputId);
             showToast('已填入');
         }
 
@@ -5556,10 +6316,64 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
             return str.charAt(0).toUpperCase() + str.slice(1);
         }
 
+        // ========== 输入框公式渲染 ==========
+        // textarea 里放不了 HTML，所以失焦时用排版视图替换它（点击视图回到编辑），
+        // 让「释义/含义」「备注/例句」两个框也能正常显示排版后的公式。
+        function setupRichField(inputId, viewId) {
+            const ta = document.getElementById(inputId);
+            const view = document.getElementById(viewId);
+            if (!ta || !view) return;
+            const field = ta.closest('.rich-field') || ta.parentElement;
+
+            const render = () => {
+                const v = ta.value || '';
+                if (!v.trim()) {
+                    field.classList.remove('rich-active');
+                    view.innerHTML = '';
+                    return;
+                }
+                try { view.innerHTML = renderAiHtml(v); } catch (e) { view.textContent = v; }
+                field.classList.add('rich-active');
+            };
+
+            ta.addEventListener('focus', () => field.classList.remove('rich-active'));
+            ta.addEventListener('blur', () => setTimeout(render, 0));
+            view.addEventListener('click', () => {
+                field.classList.remove('rich-active');
+                ta.focus();
+                const n = ta.value.length;
+                try { ta.setSelectionRange(n, n); } catch (e) {}
+            });
+
+            ta._richRender = render;
+            ta._richField = field;
+        }
+
+        // AI 填入、打开编辑后刷新排版视图
+        function refreshRichField(inputId) {
+            const ta = document.getElementById(inputId);
+            if (!ta || !ta._richRender) return;
+            if (document.activeElement === ta) return;
+            ta._richRender();
+        }
+
+        function resetRichField(inputId) {
+            const ta = document.getElementById(inputId);
+            if (!ta || !ta._richField) return;
+            ta._richField.classList.remove('rich-active');
+        }
+
         // ========== 初始化 ==========
         document.addEventListener('DOMContentLoaded', () => {
             // 刷新所有类别下拉框
             refreshCategorySelects();
+            updateAiButtonLabels();
+
+            // 输入框失焦时显示公式排版
+            setupRichField('contentInput', 'contentView');
+            setupRichField('notesInput', 'notesView');
+            setupRichField('editContent', 'editContentView');
+            setupRichField('editNotes', 'editNotesView');
 
             // 设置开始时间默认值为今天
             const todayStr = localDateStr();
