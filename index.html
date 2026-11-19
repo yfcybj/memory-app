@@ -4415,7 +4415,10 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
                 });
             } catch (err) {
                 typer.stop();
-                if (err.name === 'AbortError') {
+                // 已点过「停止生成」：无论随后抛什么错都只显示已停止
+                if (controller.signal.aborted) {
+                    statusEl.textContent = '已停止';
+                } else if (err.name === 'AbortError') {
                     statusEl.textContent = '已停止';
                 } else if (err.name === 'TypeError' || /Failed to fetch|NetworkError|Load failed/i.test(err.message || '')) {
                     console.error('AI 生成错误(网络):', err);
@@ -4741,7 +4744,7 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
 
         // ========== 设置页：软件更新（GitHub Releases） ==========
         // 与 android/app/build.gradle 的 versionName 保持一致（网页版无法读原生版本时用它）
-        const APP_VERSION_FALLBACK = '1.1.6';
+        const APP_VERSION_FALLBACK = '1.1.7';
         const GITHUB_REPO_KEY = 'memory_github_repo';
         // 内置发布地址：进设置页会自动从这里检查更新，无需手动配置
         const DEFAULT_GITHUB_REPO = 'yfcybj/memory-app';
@@ -4972,7 +4975,9 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
             }
         }
 
-        // 停止AI生成
+        // 停止AI生成：必须立即收尾，不能等请求抛 AbortError。
+        // APP 内走原生转发（不支持 abort），打字机播放阶段请求也早已结束，
+        // 只 abort 的话按钮会一直卡在「停止生成」。
         function stopAiGeneration(btn, statusEl, outputArea) {
             const target = _aiCurrentTarget;
             if (_aiAbortController) {
@@ -4981,8 +4986,10 @@ ${contentVal ? '\n该条目的核心内容是：' + contentVal : ''}
             }
             // 打字机立即停在当前进度并去掉光标
             if (target && _aiTypers[target]) _aiTypers[target].stop();
-            const bodyEl = outputArea.querySelector('.ai-output-body');
+            const bodyEl = outputArea ? outputArea.querySelector('.ai-output-body') : null;
             if (bodyEl) bodyEl.innerHTML = bodyEl.innerHTML.replace(/<span class="ai-cursor"><\/span>/, '');
+            if (statusEl) statusEl.textContent = '已停止';
+            resetAiButton(btn, target);
         }
 
         // 重置按钮状态（只清理仍属于自己的全局状态，避免把新任务的状态清掉）
